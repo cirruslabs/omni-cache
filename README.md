@@ -1,2 +1,3 @@
-# omni-cache
-Sidecar for your caching needs in CI
+# Omni Cach Sidecar
+
+Sidecar for your caching needs along CI workloads.
