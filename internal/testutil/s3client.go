@@ -20,7 +20,9 @@ import (
 
 func NewStorage(t *testing.T) storage.BlobStorageBacked {
 	bucketName := fmt.Sprintf("omni-cache-test-%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
-	return storage.NewS3Storage(S3Client(t), bucketName)
+	stor, err := storage.NewS3Storage(S3Client(t), bucketName)
+	require.NoError(t, err)
+	return stor
 }
 
 func S3Client(t *testing.T) *s3.S3 {

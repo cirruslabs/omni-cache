@@ -27,9 +27,9 @@ type s3Storage struct {
 	bucketReady bool
 }
 
-func NewS3Storage(client *s3.S3, bucketName string, prefix ...string) BlobStorageBacked {
+func NewS3Storage(client *s3.S3, bucketName string, prefix ...string) (BlobStorageBacked, error) {
 	if client == nil {
-		panic("storage: s3 client must not be nil")
+		return nil, fmt.Errorf("storage: s3 client must not be nil")
 	}
 
 	bucketName = strings.TrimSpace(bucketName)
@@ -50,7 +50,7 @@ func NewS3Storage(client *s3.S3, bucketName string, prefix ...string) BlobStorag
 		client:     client,
 		bucketName: bucketName,
 		prefix:     normalizedPrefix,
-	}
+	}, nil
 }
 
 func (s *s3Storage) ensureBucketExists(ctx context.Context) error {
