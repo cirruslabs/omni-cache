@@ -143,5 +143,10 @@ func (httpCache *internalHTTPCache) uploadCacheEntry(w http.ResponseWriter, r *h
 		log.Println("Failed response:")
 		resp.Write(log.Writer())
 	}
-	w.WriteHeader(resp.StatusCode)
+	if resp.StatusCode == http.StatusOK {
+		// our semantic is that if the object is created, then we return 201
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(resp.StatusCode)
+	}
 }
