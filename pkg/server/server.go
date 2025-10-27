@@ -23,10 +23,10 @@ func DefaultTransport() *http.Transport {
 	}
 }
 
-func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBacked) error {
+func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBacked) (*http.Server, error) {
 	mux, err := Create(backend)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	httpServer := &http.Server{
@@ -39,7 +39,7 @@ func Start(ctx context.Context, listener net.Listener, backend storage.BlobStora
 		Handler: mux,
 	}
 	go httpServer.Serve(listener)
-	return nil
+	return httpServer, nil
 }
 
 func Create(backend storage.BlobStorageBacked) (*http.ServeMux, error) {
