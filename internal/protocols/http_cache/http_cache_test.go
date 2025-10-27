@@ -2,25 +2,29 @@ package http_cache_test
 
 import (
 	"context"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"testing"
+
 	"github.com/cirruslabs/omni-cache/internal/testutil"
 	"github.com/cirruslabs/omni-cache/pkg/server"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"io"
-	"net/http"
-	"strings"
-	"testing"
 )
 
 func TestHTTPCache(t *testing.T) {
 	storage := testutil.NewStorage(t)
-	server, serverStartError := server.Start(t.Context(), nil, storage)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	testServer, serverStartError := server.Start(t.Context(), listener, storage)
 	require.NoError(t, serverStartError)
 	t.Cleanup(func() {
-		server.Shutdown(context.Background())
+		testServer.Shutdown(context.Background())
 	})
 
-	httpCacheObjectURL := "http://" + server.Addr + "/cache/" + uuid.NewString() + "/test.txt"
+	httpCacheObjectURL := "http://" + listener.Addr().String() + "/cache/" + uuid.NewString() + "/test.txt"
 
 	// Ensure that the cache entry does not exist
 	resp, err := http.Get(httpCacheObjectURL)
