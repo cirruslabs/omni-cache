@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -11,13 +12,15 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func NewStorage(t *testing.T) storage.BlobStorageBacked {
-	return storage.NewS3Storage(S3Client(t))
+	bucketName := fmt.Sprintf("omni-cache-test-%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
+	return storage.NewS3Storage(S3Client(t), bucketName)
 }
 
 func S3Client(t *testing.T) *s3.S3 {
