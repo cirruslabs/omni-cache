@@ -8,54 +8,42 @@ import (
 	"net/http"
 
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
-	"github.com/cirruslabs/omni-cache/pkg/server"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
-const httpCachePattern = "/{objectname...}"
-
-func newHttpCacheHandler(httpClient *http.Client, storagBackend storage.BlobStorageBacked) http.Handler {
-	cache := &internalHTTPCache{
-		httpClient:    httpClient,
-		storagBackend: storagBackend,
-	}
-	return cache
+type HttpCacheProtocolFactory struct {
+	protocols.CachingProtocolFactory
 }
 
-func init() {
-	server.RegisterDefaultCachingServerFactory(&protocols.CachingServerFactory{Pattern: httpCachePattern, Create: newHttpCacheHandler})
+func (factory *HttpCacheProtocolFactory) ID() string {
+	return "http-cache"
+}
+
+func (factory *HttpCacheProtocolFactory) NewInstance(storagBackend storage.BlobStorageBacked, httpClient *http.Client) (protocols.CachingProtocol, error) {
+	return &internalHTTPCache{
+		storagBackend: storagBackend,
+		httpClient:    httpClient,
+	}, nil
 }
 
 type internalHTTPCache struct {
 	http.Handler
+	protocols.CachingProtocol
 	httpClient    *http.Client
 	storagBackend storage.BlobStorageBacked
 }
 
-func (httpCache *internalHTTPCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Path
-	if key[0] == '/' {
-		key = key[1:]
-	}
-	if len(key) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	if r.Method == http.MethodGet {
-		httpCache.downloadCache(w, r, key)
-	} else if r.Method == http.MethodHead {
-		httpCache.downloadCache(w, r, key)
-	} else if r.Method == http.MethodPost {
-		httpCache.uploadCacheEntry(w, r, key)
-	} else if r.Method == http.MethodPut {
-		httpCache.uploadCacheEntry(w, r, key)
-	} else {
-		log.Printf("Not supported request method: %s\n", r.Method)
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
+func (httpCache *internalHTTPCache) Register(mux *http.ServeMux) error {
+	mux.HandleFunc("GET /{key...}", httpCache.downloadCache)
+	mux.HandleFunc("HEAD /{key...}", httpCache.downloadCache)
+	mux.HandleFunc("POST /{key...}", httpCache.uploadCacheEntry)
+	mux.HandleFunc("PUT /{key...}", httpCache.uploadCacheEntry)
+	return nil
 }
 
-func (httpCache *internalHTTPCache) downloadCache(w http.ResponseWriter, r *http.Request, cacheKey string) {
+func (httpCache *internalHTTPCache) downloadCache(w http.ResponseWriter, r *http.Request) {
+	cacheKey := r.PathValue("key")
+
 	infos, err := httpCache.storagBackend.DownloadURLs(r.Context(), cacheKey)
 	if err != nil {
 		log.Printf("%s cache download failed: %v\n", cacheKey, err)
@@ -107,7 +95,9 @@ func (httpCache *internalHTTPCache) proxyDownloadFromURL(w http.ResponseWriter, 
 	return true
 }
 
-func (httpCache *internalHTTPCache) uploadCacheEntry(w http.ResponseWriter, r *http.Request, cacheKey string) {
+func (httpCache *internalHTTPCache) uploadCacheEntry(w http.ResponseWriter, r *http.Request) {
+	cacheKey := r.PathValue("key")
+
 	info, err := httpCache.storagBackend.UploadURL(r.Context(), cacheKey, nil)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to initialized uploading of %s cache! %s", cacheKey, err)

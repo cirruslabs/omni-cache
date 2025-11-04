@@ -6,7 +6,11 @@ import (
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
-type CachingServerFactory struct {
-	Pattern string
-	Create  func(httpClient *http.Client, storagBackend storage.BlobStorageBacked) http.Handler
+type CachingProtocolFactory interface {
+	ID() string
+	NewInstance(storagBackend storage.BlobStorageBacked, httpClient *http.Client) (CachingProtocol, error)
+}
+
+type CachingProtocol interface {
+	Register(mux *http.ServeMux) error
 }

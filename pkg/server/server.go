@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache"
+	"github.com/cirruslabs/omni-cache/pkg/protocols"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
@@ -14,17 +16,16 @@ const (
 	activeRequestsPerLogicalCPU = 4
 )
 
-func DefaultTransport() *http.Transport {
-	maxConcurrentConnections := runtime.NumCPU() * activeRequestsPerLogicalCPU
-
-	return &http.Transport{
-		MaxIdleConns:        maxConcurrentConnections,
-		MaxIdleConnsPerHost: maxConcurrentConnections, // default is 2 which is too small
-	}
+var DefaultProtocolFactories = []protocols.CachingProtocolFactory{
+	&http_cache.HttpCacheProtocolFactory{},
 }
 
-func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBacked) (*http.Server, error) {
-	mux, err := Create(backend)
+func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBacked, protocols ...protocols.CachingProtocolFactory) (*http.Server, error) {
+	if len(protocols) == 0 {
+		protocols = DefaultProtocolFactories
+	}
+
+	mux, err := createMux(backend, protocols...)
 	if err != nil {
 		return nil, err
 	}
@@ -42,16 +43,27 @@ func Start(ctx context.Context, listener net.Listener, backend storage.BlobStora
 	return httpServer, nil
 }
 
-func Create(backend storage.BlobStorageBacked) (*http.ServeMux, error) {
+func createMux(backend storage.BlobStorageBacked, protocols ...protocols.CachingProtocolFactory) (*http.ServeMux, error) {
+	maxConcurrentConnections := runtime.NumCPU() * activeRequestsPerLogicalCPU
+
 	httpClient := &http.Client{
-		Transport: DefaultTransport(),
-		Timeout:   10 * time.Minute,
+		Transport: &http.Transport{
+			MaxIdleConns:        maxConcurrentConnections,
+			MaxIdleConnsPerHost: maxConcurrentConnections, // default is 2 which is too small
+		},
+		Timeout: 10 * time.Minute,
 	}
 
 	mux := http.NewServeMux()
 
-	for _, registeredProtocolFactory := range registry {
-		mux.Handle(registeredProtocolFactory.Pattern, registeredProtocolFactory.Create(httpClient, backend))
+	for _, registeredProtocolFactory := range protocols {
+		cachingProtocol, err := registeredProtocolFactory.NewInstance(backend, httpClient)
+		if err != nil {
+			return nil, err
+		}
+		if err := cachingProtocol.Register(mux); err != nil {
+			return nil, err
+		}
 	}
 
 	return mux, nil
