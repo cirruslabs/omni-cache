@@ -1,9 +1,7 @@
 package http_cache
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 
@@ -78,50 +76,10 @@ func (httpCache *internalHTTPCache) uploadCacheEntry(w http.ResponseWriter, r *h
 		w.Write([]byte(errorMsg))
 		return
 	}
-	req, err := http.NewRequest("PUT", info.URL, bufio.NewReader(r.Body))
-	if err != nil {
-		slog.ErrorContext(r.Context(), "cache upload request creation failed", "cacheKey", cacheKey, "uploadURL", info.URL, "err", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.ContentLength = r.ContentLength
-	for k, v := range info.ExtraHeaders {
-		req.Header.Set(k, v)
-	}
-	resp, err := httpCache.httpClient.Do(req)
-	if err != nil {
-		errorMsg := fmt.Sprintf("Failed to proxy upload of %s cache! %s", cacheKey, err)
-		slog.ErrorContext(r.Context(), "failed to proxy cache upload", "cacheKey", cacheKey, "uploadURL", info.URL, "err", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(errorMsg))
-		return
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		slog.ErrorContext(
-			r.Context(),
-			"cache upload proxy returned error response",
-			"cacheKey", cacheKey,
-			"status", resp.Status,
-			"statusCode", resp.StatusCode,
-			"uploadURL", info.URL,
-			"requestHeaders", req.Header,
-		)
-
-		body, bodyErr := io.ReadAll(resp.Body)
-		switch {
-		case bodyErr != nil:
-			slog.ErrorContext(r.Context(), "failed to read cache upload error response body", "cacheKey", cacheKey, "uploadURL", info.URL, "err", bodyErr)
-		case len(body) > 0:
-			slog.ErrorContext(r.Context(), "cache upload error response body", "cacheKey", cacheKey, "uploadURL", info.URL, "responseBody", string(body))
-		}
-	}
-	if resp.StatusCode == http.StatusOK {
-		// our semantic is that if the object is created, then we return 201
-		w.WriteHeader(http.StatusCreated)
-	} else {
-		w.WriteHeader(resp.StatusCode)
-	}
+	urlproxy.ProxyUploadToURL(r.Context(), w, info, urlproxy.UploadResource{
+		Body:          r.Body,
+		ContentLength: r.ContentLength,
+		ResourceName:  cacheKey,
+	})
 }
