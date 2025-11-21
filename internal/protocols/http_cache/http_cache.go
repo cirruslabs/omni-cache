@@ -9,6 +9,7 @@ import (
 
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
+	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
 
 type HttpCacheProtocolFactory struct {
@@ -58,42 +59,11 @@ func (httpCache *internalHTTPCache) downloadCache(w http.ResponseWriter, r *http
 
 func (httpCache *internalHTTPCache) proxyDownloadFromURLs(w http.ResponseWriter, r *http.Request, infos []*storage.URLInfo) {
 	for _, info := range infos {
-		if httpCache.proxyDownloadFromURL(w, r, info) {
+		if urlproxy.ProxyDownloadFromURL(r.Context(), w, info) {
 			return
 		}
 	}
 	w.WriteHeader(http.StatusNotFound)
-}
-
-func (httpCache *internalHTTPCache) proxyDownloadFromURL(w http.ResponseWriter, r *http.Request, info *storage.URLInfo) bool {
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, info.URL, nil)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "failed to create cache proxy request", "url", info.URL, "err", err)
-		return false
-	}
-	for k, v := range info.ExtraHeaders {
-		req.Header.Set(k, v)
-	}
-	resp, err := httpCache.httpClient.Do(req)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "proxy cache request failed", "url", info.URL, "err", err)
-		return false
-	}
-	defer resp.Body.Close()
-	successfulStatus := 100 <= resp.StatusCode && resp.StatusCode < 300
-	if !successfulStatus {
-		slog.ErrorContext(r.Context(), "proxy cache request returned non-successful status", "url", info.URL, "statusCode", resp.StatusCode)
-		return false
-	}
-	w.WriteHeader(resp.StatusCode)
-	bytesRead, err := io.Copy(w, resp.Body)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "proxy cache download failed", "url", info.URL, "err", err)
-		return false
-	}
-
-	slog.InfoContext(r.Context(), "proxy cache succeeded", "url", info.URL, "bytesProxied", bytesRead)
-	return true
 }
 
 func (httpCache *internalHTTPCache) uploadCacheEntry(w http.ResponseWriter, r *http.Request) {
