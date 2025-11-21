@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	bytestream "google.golang.org/genproto/googleapis/bytestream"
+
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
@@ -19,6 +21,20 @@ type UploadResource struct {
 
 // ProxyUploadToURL proxies an upload request to the provided URL and responds to w with the proxied status.
 func ProxyUploadToURL(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
+	scheme := info.Scheme()
+	switch {
+	case scheme == "" || isHTTPScheme(scheme):
+		return proxyHTTPUpload(ctx, w, info, resource)
+	case isGRPCScheme(scheme):
+		return proxyGRPCUpload(ctx, w, info, resource)
+	default:
+		slog.ErrorContext(ctx, "unsupported upload URL scheme", "resourceName", resource.ResourceName, "uploadURL", info.URL, "scheme", scheme)
+		w.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+}
+
+func proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, info.URL, bufio.NewReader(resource.Body))
 	if err != nil {
 		slog.ErrorContext(ctx, "cache upload request creation failed", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
@@ -68,4 +84,89 @@ func ProxyUploadToURL(ctx context.Context, w http.ResponseWriter, info *storage.
 	}
 
 	return resp.StatusCode < 400
+}
+
+func proxyGRPCUpload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
+	client, closer, err := newByteStreamClientFromURL(ctx, info)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to dial bytestream upload", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+	defer closer.Close()
+
+	resourceName := resource.ResourceName
+	if resourceName == "" {
+		slog.ErrorContext(ctx, "bytestream upload requires non-empty resource name", "resourceName", resource.ResourceName, "uploadURL", info.URL)
+		w.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+
+	stream, err := client.Write(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to start bytestream upload", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+
+	reader := bufio.NewReader(resource.Body)
+	buffer := make([]byte, 64*1024)
+
+	var written int64
+	for {
+		n, readErr := reader.Read(buffer)
+
+		if n > 0 {
+			if err := stream.Send(&bytestream.WriteRequest{
+				ResourceName: resourceName,
+				WriteOffset:  written,
+				Data:         buffer[:n],
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to send bytestream chunk", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return false
+			}
+			written += int64(n)
+		}
+
+		if readErr != nil {
+			if readErr != io.EOF {
+				slog.ErrorContext(ctx, "failed to read upload body", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", readErr)
+				w.WriteHeader(http.StatusInternalServerError)
+				return false
+			}
+			break
+		}
+	}
+
+	if err := stream.Send(&bytestream.WriteRequest{
+		ResourceName: resourceName,
+		WriteOffset:  written,
+		FinishWrite:  true,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to finish bytestream upload", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to close bytestream upload", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+
+	if resp.GetCommittedSize() != 0 && resp.GetCommittedSize() != written {
+		slog.WarnContext(
+			ctx,
+			"bytestream upload committed size differs from bytes sent",
+			"resourceName", resource.ResourceName,
+			"uploadURL", info.URL,
+			"bytesSent", written,
+			"bytesCommitted", resp.GetCommittedSize(),
+		)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	return true
 }

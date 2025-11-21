@@ -57,7 +57,7 @@ func (httpCache *internalHTTPCache) downloadCache(w http.ResponseWriter, r *http
 
 func (httpCache *internalHTTPCache) proxyDownloadFromURLs(w http.ResponseWriter, r *http.Request, infos []*storage.URLInfo) {
 	for _, info := range infos {
-		if urlproxy.ProxyDownloadFromURL(r.Context(), w, info) {
+		if urlproxy.ProxyDownloadFromURL(r.Context(), w, info, r.PathValue("key")) {
 			return
 		}
 	}
