@@ -1,0 +1,9 @@
+docker_builder:
+  name: Test (Linux with Docker)
+  alias: Tests
+  test_script:
+    - wget --no-verbose -O - https://go.dev/dl/go1.25.4.linux-amd64.tar.gz | tar -C /usr/local -xz
+    - export PATH=$PATH:/usr/local/go/bin
+    - go test ./...
+  env:
+    HOME: /root

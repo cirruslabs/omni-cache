@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -9,25 +10,29 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
 )
 
-const defaultPresignExpiration = 10 * time.Minute
+const (
+	defaultPresignExpiration = 10 * time.Minute
+	bucketWaitTimeout        = 1 * time.Minute
+)
 
 type s3Storage struct {
-	client     *s3.S3
-	bucketName string
-	prefix     []string
+	client        *s3.Client
+	presignClient *s3.PresignClient
+	bucketName    string
+	prefix        []string
 
 	bucketMu    sync.Mutex
 	bucketReady bool
 }
 
-func NewS3Storage(client *s3.S3, bucketName string, prefix ...string) (BlobStorageBacked, error) {
+func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (BlobStorageBacked, error) {
 	if client == nil {
 		return nil, fmt.Errorf("storage: s3 client must not be nil")
 	}
@@ -47,9 +52,10 @@ func NewS3Storage(client *s3.S3, bucketName string, prefix ...string) (BlobStora
 	}
 
 	return &s3Storage{
-		client:     client,
-		bucketName: bucketName,
-		prefix:     normalizedPrefix,
+		client:        client,
+		presignClient: s3.NewPresignClient(client),
+		bucketName:    bucketName,
+		prefix:        normalizedPrefix,
 	}, nil
 }
 
@@ -62,7 +68,7 @@ func (s *s3Storage) ensureBucketExists(ctx context.Context) error {
 	}
 
 	headInput := &s3.HeadBucketInput{Bucket: aws.String(s.bucketName)}
-	if _, err := s.client.HeadBucketWithContext(ctx, headInput); err == nil {
+	if _, err := s.client.HeadBucket(ctx, headInput); err == nil {
 		s.bucketReady = true
 		return nil
 	}
@@ -70,19 +76,19 @@ func (s *s3Storage) ensureBucketExists(ctx context.Context) error {
 	createInput := &s3.CreateBucketInput{
 		Bucket: aws.String(s.bucketName),
 	}
-	_, err := s.client.CreateBucketWithContext(ctx, createInput)
-	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			switch awsErr.Code() {
-			case s3.ErrCodeBucketAlreadyOwnedByYou, s3.ErrCodeBucketAlreadyExists:
-				s.bucketReady = true
-				return nil
-			}
+	if _, err := s.client.CreateBucket(ctx, createInput); err != nil {
+		var alreadyOwned *types.BucketAlreadyOwnedByYou
+		var alreadyExists *types.BucketAlreadyExists
+
+		if errors.As(err, &alreadyOwned) || errors.As(err, &alreadyExists) {
+			s.bucketReady = true
+			return nil
 		}
 		return err
 	}
 
-	if waitErr := s.client.WaitUntilBucketExistsWithContext(ctx, headInput); waitErr != nil {
+	waiter := s3.NewBucketExistsWaiter(s.client)
+	if waitErr := waiter.Wait(ctx, headInput, bucketWaitTimeout); waitErr != nil {
 		return waitErr
 	}
 
@@ -113,7 +119,7 @@ func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, e
 		Key:    aws.String(objectKey),
 	}
 
-	if _, err := s.client.HeadObjectWithContext(ctx, headInput); err != nil {
+	if _, err := s.client.HeadObject(ctx, headInput); err != nil {
 		return nil, err
 	}
 
@@ -139,32 +145,32 @@ func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[stri
 
 	objectKey := s.objectKey(key)
 
-	var objectMetadata map[string]*string
+	var objectMetadata map[string]string
 	if len(metadata) > 0 {
-		objectMetadata = make(map[string]*string, len(metadata))
+		objectMetadata = make(map[string]string, len(metadata))
 		for k, v := range metadata {
 			if k == "" {
 				continue
 			}
-			objectMetadata[strings.ToLower(k)] = aws.String(v)
+			objectMetadata[strings.ToLower(k)] = v
 		}
 	}
 
 	putInput := &s3.PutObjectInput{
-		Bucket:   aws.String(s.bucketName),
-		Key:      aws.String(objectKey),
-		Metadata: objectMetadata,
+		Bucket:      aws.String(s.bucketName),
+		Key:         aws.String(objectKey),
+		Metadata:    objectMetadata,
+		ContentType: aws.String("application/octet-stream"),
 	}
 
-	req, _ := s.client.PutObjectRequest(putInput)
-	req.SetContext(ctx)
-	req.HTTPRequest.Header.Set("Content-Type", "application/octet-stream")
-	req.HTTPRequest.Header.Set("X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD")
-
-	info, err := s.presignRequest(ctx, req)
+	presigned, err := s.presignClient.PresignPutObject(ctx, putInput, func(po *s3.PresignOptions) {
+		po.Expires = defaultPresignExpiration
+	})
 	if err != nil {
 		return nil, err
 	}
+
+	info := buildURLInfo(presigned)
 
 	if info.ExtraHeaders == nil {
 		info.ExtraHeaders = make(map[string]string)
@@ -172,7 +178,6 @@ func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[stri
 
 	// Ensure callers propagate the headers that were part of the signature.
 	info.ExtraHeaders["Content-Type"] = "application/octet-stream"
-	info.ExtraHeaders["X-Amz-Content-Sha256"] = "UNSIGNED-PAYLOAD"
 
 	for k, v := range metadata {
 		if k == "" {
@@ -186,37 +191,40 @@ func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[stri
 }
 
 func (s *s3Storage) presignGet(ctx context.Context, objectKey string) (*URLInfo, error) {
-	req, _ := s.client.GetObjectRequest(&s3.GetObjectInput{
+	presigned, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(objectKey),
+	}, func(po *s3.PresignOptions) {
+		po.Expires = defaultPresignExpiration
 	})
-	req.SetContext(ctx)
-	return s.presignRequest(ctx, req)
-}
-
-func (s *s3Storage) presignHead(ctx context.Context, objectKey string) (*URLInfo, error) {
-	req, _ := s.client.HeadObjectRequest(&s3.HeadObjectInput{
-		Bucket: aws.String(s.bucketName),
-		Key:    aws.String(objectKey),
-	})
-	req.SetContext(ctx)
-	return s.presignRequest(ctx, req)
-}
-
-func (s *s3Storage) presignRequest(ctx context.Context, req *request.Request) (*URLInfo, error) {
-	req.SetContext(ctx)
-
-	urlStr, err := req.Presign(defaultPresignExpiration)
 	if err != nil {
 		return nil, err
 	}
 
-	extraHeaders := extractRelevantHeaders(req.HTTPRequest.Header)
+	return buildURLInfo(presigned), nil
+}
+
+func (s *s3Storage) presignHead(ctx context.Context, objectKey string) (*URLInfo, error) {
+	presigned, err := s.presignClient.PresignHeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(objectKey),
+	}, func(po *s3.PresignOptions) {
+		po.Expires = defaultPresignExpiration
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return buildURLInfo(presigned), nil
+}
+
+func buildURLInfo(presigned *v4.PresignedHTTPRequest) *URLInfo {
+	extraHeaders := extractRelevantHeaders(presigned.SignedHeader)
 
 	return &URLInfo{
-		URL:          urlStr,
+		URL:          presigned.URL,
 		ExtraHeaders: extraHeaders,
-	}, nil
+	}
 }
 
 func extractRelevantHeaders(headers http.Header) map[string]string {

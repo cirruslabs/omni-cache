@@ -68,7 +68,7 @@ func newByteStreamClientFromURL(ctx context.Context, info *storage.URLInfo) (byt
 		)
 	}
 
-	conn, err := grpc.DialContext(ctx, address, opts...)
+	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {
 		return nil, io.NopCloser(strings.NewReader("")), err
 	}
