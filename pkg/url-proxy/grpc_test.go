@@ -106,6 +106,7 @@ func TestProxyDownloadFromURL_GRPC(t *testing.T) {
 		readChunks: [][]byte{[]byte("hello "), []byte("world")},
 	}
 	address := startByteStreamServer(t, srv)
+	proxy := NewProxy()
 
 	info := &storage.URLInfo{
 		URL: "grpc://" + address,
@@ -115,7 +116,7 @@ func TestProxyDownloadFromURL_GRPC(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	ok := ProxyDownloadFromURL(context.Background(), rr, info, "cache-key")
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key")
 	require.True(t, ok)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.Equal(t, "hello world", rr.Body.String())
@@ -126,6 +127,7 @@ func TestProxyDownloadFromURL_GRPC(t *testing.T) {
 func TestProxyUploadToURL_GRPC(t *testing.T) {
 	srv := &testByteStreamServer{}
 	address := startByteStreamServer(t, srv)
+	proxy := NewProxy()
 
 	payload := []byte("upload body data")
 	info := &storage.URLInfo{
@@ -136,7 +138,7 @@ func TestProxyUploadToURL_GRPC(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	ok := ProxyUploadToURL(context.Background(), rr, info, UploadResource{
+	ok := proxy.ProxyUploadToURL(context.Background(), rr, info, UploadResource{
 		Body:          bytes.NewReader(payload),
 		ContentLength: int64(len(payload)),
 		ResourceName:  "cache-key",
@@ -147,4 +149,29 @@ func TestProxyUploadToURL_GRPC(t *testing.T) {
 	require.Equal(t, payload, srv.written.Bytes())
 	require.Equal(t, "cache-key", srv.writeResName)
 	require.Equal(t, []string{"upload-md"}, srv.writeMD.Get("x-test-meta"))
+}
+
+func TestProxyDownloadFromURL_GRPCCustomDialOption(t *testing.T) {
+	srv := &testByteStreamServer{
+		readChunks: [][]byte{[]byte("custom")},
+	}
+	address := startByteStreamServer(t, srv)
+
+	var dialerCalled bool
+	var dialerAddr string
+	customDialer := grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+		dialerCalled = true
+		dialerAddr = addr
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", addr)
+	})
+
+	proxy := NewProxy(WithGRPCDialOptions(customDialer))
+
+	rr := httptest.NewRecorder()
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, &storage.URLInfo{URL: "grpc://" + address}, "cache-key")
+	require.True(t, ok)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.True(t, dialerCalled)
+	require.Equal(t, address, dialerAddr)
 }

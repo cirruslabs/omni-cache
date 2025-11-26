@@ -6,27 +6,26 @@ import (
 	"log/slog"
 	"net/http"
 
-	bytestream "google.golang.org/genproto/googleapis/bytestream"
-
 	"github.com/cirruslabs/omni-cache/pkg/storage"
+	bytestream "google.golang.org/genproto/googleapis/bytestream"
 )
 
 // ProxyDownloadFromURL proxies a download request to the provided URL and returns true if streaming succeeded.
 // resourceName is used for ByteStream requests.
-func ProxyDownloadFromURL(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resourceName string) bool {
+func (p *Proxy) ProxyDownloadFromURL(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resourceName string) bool {
 	scheme := info.Scheme()
 	switch {
 	case scheme == "" || isHTTPScheme(scheme):
-		return proxyHTTPDownload(ctx, w, info)
+		return p.proxyHTTPDownload(ctx, w, info)
 	case isGRPCScheme(scheme):
-		return proxyGRPCDownload(ctx, w, info, resourceName)
+		return p.proxyGRPCDownload(ctx, w, info, resourceName)
 	default:
 		slog.ErrorContext(ctx, "unsupported download URL scheme", "url", info.URL, "scheme", scheme)
 		return false
 	}
 }
 
-func proxyHTTPDownload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo) bool {
+func (p *Proxy) proxyHTTPDownload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.URL, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to create cache proxy request", "url", info.URL, "err", err)
@@ -35,7 +34,7 @@ func proxyHTTPDownload(ctx context.Context, w http.ResponseWriter, info *storage
 	for k, v := range info.ExtraHeaders {
 		req.Header.Set(k, v)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		slog.ErrorContext(ctx, "proxy cache request failed", "url", info.URL, "err", err)
 		return false
@@ -57,8 +56,8 @@ func proxyHTTPDownload(ctx context.Context, w http.ResponseWriter, info *storage
 	return true
 }
 
-func proxyGRPCDownload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resourceName string) bool {
-	client, closer, err := newByteStreamClientFromURL(ctx, info)
+func (p *Proxy) proxyGRPCDownload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resourceName string) bool {
+	client, closer, err := newByteStreamClientFromURL(ctx, info, p.grpcDialOptions...)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to dial bytestream download", "url", info.URL, "err", err)
 		return false
