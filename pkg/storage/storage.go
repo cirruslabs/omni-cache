@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"maps"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -23,6 +25,21 @@ func (info *URLInfo) Scheme() string {
 	}
 
 	return strings.ToLower(parsed.Scheme)
+}
+
+func (info *URLInfo) NewGetRequestWithContext(ctx context.Context, overrideHeaders map[string]string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.URL, nil)
+	if err != nil {
+		return req, err
+	}
+	combinedHeaders := map[string]string{}
+	maps.Copy(combinedHeaders, info.ExtraHeaders)
+	maps.Copy(combinedHeaders, overrideHeaders)
+
+	for k, v := range combinedHeaders {
+		req.Header.Set(k, v)
+	}
+	return req, nil
 }
 
 type BlobStorageBacked interface {
