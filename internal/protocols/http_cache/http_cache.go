@@ -21,14 +21,14 @@ func (factory *HttpCacheProtocolFactory) ID() string {
 func (factory *HttpCacheProtocolFactory) NewInstance(storagBackend storage.BlobStorageBacked, httpClient *http.Client) (protocols.CachingProtocol, error) {
 	return &internalHTTPCache{
 		storagBackend: storagBackend,
-		httpClient:    httpClient,
+		urlProxy:      urlproxy.NewProxy(urlproxy.WithHTTPClient(httpClient)),
 	}, nil
 }
 
 type internalHTTPCache struct {
 	http.Handler
 	protocols.CachingProtocol
-	httpClient    *http.Client
+	urlProxy      *urlproxy.Proxy
 	storagBackend storage.BlobStorageBacked
 }
 
@@ -57,7 +57,7 @@ func (httpCache *internalHTTPCache) downloadCache(w http.ResponseWriter, r *http
 
 func (httpCache *internalHTTPCache) proxyDownloadFromURLs(w http.ResponseWriter, r *http.Request, infos []*storage.URLInfo) {
 	for _, info := range infos {
-		if urlproxy.ProxyDownloadFromURL(r.Context(), w, info, r.PathValue("key")) {
+		if httpCache.urlProxy.ProxyDownloadFromURL(r.Context(), w, info, r.PathValue("key")) {
 			return
 		}
 	}
@@ -77,7 +77,7 @@ func (httpCache *internalHTTPCache) uploadCacheEntry(w http.ResponseWriter, r *h
 		return
 	}
 
-	urlproxy.ProxyUploadToURL(r.Context(), w, info, urlproxy.UploadResource{
+	httpCache.urlProxy.ProxyUploadToURL(r.Context(), w, info, urlproxy.UploadResource{
 		Body:          r.Body,
 		ContentLength: r.ContentLength,
 		ResourceName:  cacheKey,

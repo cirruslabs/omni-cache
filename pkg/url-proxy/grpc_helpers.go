@@ -24,7 +24,7 @@ func isGRPCScheme(scheme string) bool {
 	return scheme == "grpc" || scheme == "grpcs"
 }
 
-func newByteStreamClientFromURL(ctx context.Context, info *storage.URLInfo) (bytestream.ByteStreamClient, io.Closer, error) {
+func newByteStreamClientFromURL(ctx context.Context, info *storage.URLInfo, extraDialOpts ...grpc.DialOption) (bytestream.ByteStreamClient, io.Closer, error) {
 	if info == nil {
 		return nil, io.NopCloser(strings.NewReader("")), fmt.Errorf("url info is nil")
 	}
@@ -67,6 +67,8 @@ func newByteStreamClientFromURL(ctx context.Context, info *storage.URLInfo) (byt
 			}),
 		)
 	}
+
+	opts = append(opts, extraDialOpts...)
 
 	conn, err := grpc.NewClient(address, opts...)
 	if err != nil {

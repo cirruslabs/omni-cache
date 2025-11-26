@@ -20,13 +20,13 @@ type UploadResource struct {
 }
 
 // ProxyUploadToURL proxies an upload request to the provided URL and responds to w with the proxied status.
-func ProxyUploadToURL(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
+func (p *Proxy) ProxyUploadToURL(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
 	scheme := info.Scheme()
 	switch {
 	case scheme == "" || isHTTPScheme(scheme):
-		return proxyHTTPUpload(ctx, w, info, resource)
+		return p.proxyHTTPUpload(ctx, w, info, resource)
 	case isGRPCScheme(scheme):
-		return proxyGRPCUpload(ctx, w, info, resource)
+		return p.proxyGRPCUpload(ctx, w, info, resource)
 	default:
 		slog.ErrorContext(ctx, "unsupported upload URL scheme", "resourceName", resource.ResourceName, "uploadURL", info.URL, "scheme", scheme)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -34,7 +34,7 @@ func ProxyUploadToURL(ctx context.Context, w http.ResponseWriter, info *storage.
 	}
 }
 
-func proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
+func (p *Proxy) proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, info.URL, bufio.NewReader(resource.Body))
 	if err != nil {
 		slog.ErrorContext(ctx, "cache upload request creation failed", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
@@ -47,7 +47,7 @@ func proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info *storage.U
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to proxy upload of %s cache! %s", resource.ResourceName, err)
 		slog.ErrorContext(ctx, "failed to proxy cache upload", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
@@ -86,8 +86,8 @@ func proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info *storage.U
 	return resp.StatusCode < 400
 }
 
-func proxyGRPCUpload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
-	client, closer, err := newByteStreamClientFromURL(ctx, info)
+func (p *Proxy) proxyGRPCUpload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
+	client, closer, err := newByteStreamClientFromURL(ctx, info, p.grpcDialOptions...)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to dial bytestream upload", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
