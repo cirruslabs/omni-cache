@@ -32,7 +32,7 @@ type s3Storage struct {
 	bucketReady bool
 }
 
-func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (BlobStorageBacked, error) {
+func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (MultipartBlobStorageBacked, error) {
 	if client == nil {
 		return nil, fmt.Errorf("storage: s3 client must not be nil")
 	}
@@ -246,4 +246,90 @@ func extractRelevantHeaders(headers http.Header) map[string]string {
 	}
 
 	return extra
+}
+
+func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (string, error) {
+	if err := s.ensureBucketExists(ctx); err != nil {
+		return "", err
+	}
+
+	objectKey := s.objectKey(key)
+
+	var objectMetadata map[string]string
+	if len(metadata) > 0 {
+		objectMetadata = make(map[string]string, len(metadata))
+		for k, v := range metadata {
+			if k == "" {
+				continue
+			}
+			objectMetadata[strings.ToLower(k)] = v
+		}
+	}
+
+	createInput := &s3.CreateMultipartUploadInput{
+		Bucket:      aws.String(s.bucketName),
+		Key:         aws.String(objectKey),
+		Metadata:    objectMetadata,
+		ContentType: aws.String("application/octet-stream"),
+	}
+
+	result, err := s.client.CreateMultipartUpload(ctx, createInput)
+	if err != nil {
+		return "", err
+	}
+
+	return *result.UploadId, nil
+}
+
+func (s *s3Storage) UploadPartURL(ctx context.Context, key string, uploadID string, partNumber uint32, contentLength uint64) (*URLInfo, error) {
+	if err := s.ensureBucketExists(ctx); err != nil {
+		return nil, err
+	}
+
+	objectKey := s.objectKey(key)
+
+	uploadPartInput := &s3.UploadPartInput{
+		Bucket:        aws.String(s.bucketName),
+		Key:           aws.String(objectKey),
+		UploadId:      aws.String(uploadID),
+		PartNumber:    aws.Int32(int32(partNumber)),
+		ContentLength: aws.Int64(int64(contentLength)),
+	}
+
+	presigned, err := s.presignClient.PresignUploadPart(ctx, uploadPartInput, func(po *s3.PresignOptions) {
+		po.Expires = defaultPresignExpiration
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return buildURLInfo(presigned), nil
+}
+
+func (s *s3Storage) CommitMultipartUpload(ctx context.Context, key string, uploadID string, parts []MultipartUploadPart) error {
+	if err := s.ensureBucketExists(ctx); err != nil {
+		return err
+	}
+
+	objectKey := s.objectKey(key)
+
+	completedParts := make([]types.CompletedPart, len(parts))
+	for i, part := range parts {
+		completedParts[i] = types.CompletedPart{
+			PartNumber: aws.Int32(int32(part.PartNumber)),
+			ETag:       aws.String(part.ETag),
+		}
+	}
+
+	completeInput := &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(s.bucketName),
+		Key:      aws.String(objectKey),
+		UploadId: aws.String(uploadID),
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: completedParts,
+		},
+	}
+
+	_, err := s.client.CompleteMultipartUpload(ctx, completeInput)
+	return err
 }

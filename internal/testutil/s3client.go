@@ -19,6 +19,10 @@ import (
 )
 
 func NewStorage(t *testing.T) storage.BlobStorageBacked {
+	return NewMultipartStorage(t)
+}
+
+func NewMultipartStorage(t *testing.T) storage.MultipartBlobStorageBacked {
 	bucketName := fmt.Sprintf("omni-cache-test-%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
 	stor, err := storage.NewS3Storage(S3Client(t), bucketName)
 	require.NoError(t, err)

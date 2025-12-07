@@ -25,7 +25,21 @@ func (info *URLInfo) Scheme() string {
 	return strings.ToLower(parsed.Scheme)
 }
 
+// MultipartUploadPart represents a completed part in a multipart upload.
+type MultipartUploadPart struct {
+	PartNumber uint32
+	ETag       string
+}
+
 type BlobStorageBacked interface {
 	DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error)
 	UploadURL(ctx context.Context, key string, metadate map[string]string) (*URLInfo, error)
+}
+
+type MultipartBlobStorageBacked interface {
+	BlobStorageBacked
+
+	CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (uploadID string, err error)
+	UploadPartURL(ctx context.Context, key string, uploadID string, partNumber uint32, contentLength uint64) (*URLInfo, error)
+	CommitMultipartUpload(ctx context.Context, key string, uploadID string, parts []MultipartUploadPart) error
 }
