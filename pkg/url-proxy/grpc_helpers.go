@@ -44,19 +44,7 @@ func newByteStreamClientFromURL(ctx context.Context, info *storage.URLInfo, extr
 	var address string
 	switch scheme {
 	case "unix":
-		socketPath := u.Path
-		if socketPath == "" && u.Host != "" {
-			socketPath = u.Host
-		} else if socketPath != "" && u.Host != "" && socketPath != "/" {
-			socketPath = "/" + u.Host + socketPath
-		}
-		if socketPath == "" || socketPath == "/" {
-			return nil, io.NopCloser(strings.NewReader("")), fmt.Errorf("unix URL %q does not include socket path", u.String())
-		}
-		if !strings.HasPrefix(socketPath, "/") {
-			socketPath = "/" + socketPath
-		}
-		address = "unix://" + socketPath
+		address = u.String()
 	default:
 		host := u.Hostname()
 		if host == "" {
