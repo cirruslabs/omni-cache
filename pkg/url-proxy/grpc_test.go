@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -110,13 +109,7 @@ func startByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string
 func startUnixByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string {
 	t.Helper()
 
-	socketDir, err := os.MkdirTemp("/tmp", "omni-cache-unixgrpc-")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(socketDir)
-	})
-
-	socketPath := filepath.Join(socketDir, "bytestream.sock")
+	socketPath := filepath.Join(t.TempDir(), "bytestream.sock")
 	lis, err := net.Listen("unix", socketPath)
 	require.NoError(t, err)
 
