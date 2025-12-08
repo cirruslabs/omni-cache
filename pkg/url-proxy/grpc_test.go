@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -82,12 +83,7 @@ func (s *testByteStreamServer) QueryWriteStatus(_ context.Context, _ *bytestream
 	}, nil
 }
 
-func startByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string {
-	t.Helper()
-
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
+func startByteStreamServerWithListener(t *testing.T, lis net.Listener, srv bytestream.ByteStreamServer) string {
 	server := grpc.NewServer()
 	bytestream.RegisterByteStreamServer(server, srv)
 
@@ -99,6 +95,25 @@ func startByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string
 	})
 
 	return lis.Addr().String()
+}
+
+func startByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string {
+	t.Helper()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	return startByteStreamServerWithListener(t, lis, srv)
+}
+
+func startUnixByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string {
+	t.Helper()
+
+	socketPath := filepath.Join(t.TempDir(), "bytestream.sock")
+	lis, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	return startByteStreamServerWithListener(t, lis, srv)
 }
 
 func TestProxyDownloadFromURL_GRPC(t *testing.T) {
@@ -174,4 +189,54 @@ func TestProxyDownloadFromURL_GRPCCustomDialOption(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.True(t, dialerCalled)
 	require.Equal(t, address, dialerAddr)
+}
+
+func TestProxyDownloadFromURL_UnixGRPC(t *testing.T) {
+	srv := &testByteStreamServer{
+		readChunks: [][]byte{[]byte("unix grpc")},
+	}
+	socketPath := startUnixByteStreamServer(t, srv)
+	proxy := NewProxy()
+
+	info := &storage.URLInfo{
+		URL: "unix://" + socketPath,
+		ExtraHeaders: map[string]string{
+			"X-Test-Meta": "unix-download",
+		},
+	}
+
+	rr := httptest.NewRecorder()
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key")
+	require.True(t, ok)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "unix grpc", rr.Body.String())
+	require.Equal(t, "cache-key", srv.readResName)
+	require.Equal(t, []string{"unix-download"}, srv.readMD.Get("x-test-meta"))
+}
+
+func TestProxyUploadToURL_UnixGRPC(t *testing.T) {
+	srv := &testByteStreamServer{}
+	socketPath := startUnixByteStreamServer(t, srv)
+	proxy := NewProxy()
+
+	payload := []byte("unix upload body")
+	info := &storage.URLInfo{
+		URL: "unix://" + socketPath,
+		ExtraHeaders: map[string]string{
+			"X-Test-Meta": "unix-upload",
+		},
+	}
+
+	rr := httptest.NewRecorder()
+	ok := proxy.ProxyUploadToURL(context.Background(), rr, info, UploadResource{
+		Body:          bytes.NewReader(payload),
+		ContentLength: int64(len(payload)),
+		ResourceName:  "cache-key",
+	})
+
+	require.True(t, ok)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	require.Equal(t, payload, srv.written.Bytes())
+	require.Equal(t, "cache-key", srv.writeResName)
+	require.Equal(t, []string{"unix-upload"}, srv.writeMD.Get("x-test-meta"))
 }

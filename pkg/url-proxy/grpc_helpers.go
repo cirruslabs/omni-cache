@@ -21,7 +21,7 @@ func isHTTPScheme(scheme string) bool {
 }
 
 func isGRPCScheme(scheme string) bool {
-	return scheme == "grpc" || scheme == "grpcs"
+	return scheme == "grpc" || scheme == "grpcs" || scheme == "unix"
 }
 
 func newByteStreamClientFromURL(ctx context.Context, info *storage.URLInfo, extraDialOpts ...grpc.DialOption) (bytestream.ByteStreamClient, io.Closer, error) {
@@ -36,25 +36,32 @@ func newByteStreamClientFromURL(ctx context.Context, info *storage.URLInfo, extr
 
 	scheme := strings.ToLower(u.Scheme)
 
-	host := u.Hostname()
-	if host == "" {
-		return nil, io.NopCloser(strings.NewReader("")), fmt.Errorf("gRPC URL %q does not include host", u.String())
-	}
-
-	port := u.Port()
-	if port == "" {
-		if scheme == "grpcs" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-
 	creds := insecure.NewCredentials()
 	if scheme == "grpcs" {
 		creds = credentials.NewClientTLSFromCert(nil, "")
 	}
-	address := net.JoinHostPort(host, port)
+
+	var address string
+	switch scheme {
+	case "unix":
+		address = u.String()
+	default:
+		host := u.Hostname()
+		if host == "" {
+			return nil, io.NopCloser(strings.NewReader("")), fmt.Errorf("gRPC URL %q does not include host", u.String())
+		}
+
+		port := u.Port()
+		if port == "" {
+			if scheme == "grpcs" {
+				port = "443"
+			} else {
+				port = "80"
+			}
+		}
+
+		address = net.JoinHostPort(host, port)
+	}
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds)}
 	if md := metadata.New(info.ExtraHeaders); len(md) > 0 {
