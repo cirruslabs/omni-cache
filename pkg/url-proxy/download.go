@@ -77,8 +77,6 @@ func (p *Proxy) proxyGRPCDownload(ctx context.Context, w http.ResponseWriter, in
 		return false
 	}
 
-	w.WriteHeader(http.StatusOK)
-
 	var bytesRead int64
 	for {
 		msg, err := stream.Recv()
@@ -103,5 +101,5 @@ func (p *Proxy) proxyGRPCDownload(ctx context.Context, w http.ResponseWriter, in
 	}
 
 	slog.InfoContext(ctx, "proxy cache gRPC download succeeded", "url", info.URL, "bytesProxied", bytesRead)
-	return true
+	return bytesRead > 0
 }
