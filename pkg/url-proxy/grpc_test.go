@@ -12,7 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	bytestream "google.golang.org/genproto/googleapis/bytestream"
 
@@ -239,4 +241,49 @@ func TestProxyUploadToURL_UnixGRPC(t *testing.T) {
 	require.Equal(t, payload, srv.written.Bytes())
 	require.Equal(t, "cache-key", srv.writeResName)
 	require.Equal(t, []string{"unix-upload"}, srv.writeMD.Get("x-test-meta"))
+}
+
+// errorByteStreamServer returns an error on the first Recv() call
+type errorByteStreamServer struct {
+	err error
+}
+
+func (s *errorByteStreamServer) Read(_ *bytestream.ReadRequest, _ bytestream.ByteStream_ReadServer) error {
+	return s.err
+}
+
+func (s *errorByteStreamServer) Write(_ bytestream.ByteStream_WriteServer) error {
+	return s.err
+}
+
+func (s *errorByteStreamServer) QueryWriteStatus(_ context.Context, _ *bytestream.QueryWriteStatusRequest) (*bytestream.QueryWriteStatusResponse, error) {
+	return nil, s.err
+}
+
+// TestProxyDownloadFromURL_GRPC_Error tests that when gRPC Read fails,
+// no HTTP status is written, allowing the caller to write an appropriate error status.
+func TestProxyDownloadFromURL_GRPC_Error(t *testing.T) {
+	srv := &errorByteStreamServer{
+		err: status.Error(codes.NotFound, "cache blob not found"),
+	}
+	address := startByteStreamServer(t, srv)
+	proxy := NewProxy()
+
+	info := &storage.URLInfo{
+		URL: "grpc://" + address,
+	}
+
+	rr := httptest.NewRecorder()
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key")
+
+	// The proxy should return false to indicate failure
+	require.False(t, ok)
+
+	// Importantly, no status should have been written yet,
+	// so the caller can write an appropriate error status.
+	// httptest.ResponseRecorder starts with Code=200, but if WriteHeader wasn't called,
+	// we can detect this by checking if the header was explicitly written.
+	// Since we returned false without writing, the Code should still be default 200
+	// but no bytes should have been written to the body.
+	require.Empty(t, rr.Body.String())
 }
