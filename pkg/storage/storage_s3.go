@@ -160,9 +160,7 @@ func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[stri
 		ContentType: aws.String("application/octet-stream"),
 	}
 
-	presigned, err := s.presignClient.PresignPutObject(ctx, putInput, func(po *s3.PresignOptions) {
-		po.Expires = defaultPresignExpiration
-	})
+	presigned, err := s.presignClient.PresignPutObject(ctx, putInput, s3.WithPresignExpires(defaultPresignExpiration))
 	if err != nil {
 		return nil, err
 	}
@@ -191,9 +189,7 @@ func (s *s3Storage) presignGet(ctx context.Context, objectKey string) (*URLInfo,
 	presigned, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(objectKey),
-	}, func(po *s3.PresignOptions) {
-		po.Expires = defaultPresignExpiration
-	})
+	}, s3.WithPresignExpires(defaultPresignExpiration))
 	if err != nil {
 		return nil, err
 	}
@@ -205,9 +201,7 @@ func (s *s3Storage) presignHead(ctx context.Context, objectKey string) (*URLInfo
 	presigned, err := s.presignClient.PresignHeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(objectKey),
-	}, func(po *s3.PresignOptions) {
-		po.Expires = defaultPresignExpiration
-	})
+	}, s3.WithPresignExpires(defaultPresignExpiration))
 	if err != nil {
 		return nil, err
 	}
@@ -274,9 +268,7 @@ func (s *s3Storage) UploadPartURL(ctx context.Context, key string, uploadID stri
 		ContentLength: aws.Int64(int64(contentLength)),
 	}
 
-	presigned, err := s.presignClient.PresignUploadPart(ctx, uploadPartInput, func(po *s3.PresignOptions) {
-		po.Expires = defaultPresignExpiration
-	})
+	presigned, err := s.presignClient.PresignUploadPart(ctx, uploadPartInput, s3.WithPresignExpires(defaultPresignExpiration))
 	if err != nil {
 		return nil, err
 	}
