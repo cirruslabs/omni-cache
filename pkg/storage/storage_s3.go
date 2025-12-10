@@ -255,21 +255,10 @@ func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metad
 
 	objectKey := s.objectKey(key)
 
-	var objectMetadata map[string]string
-	if len(metadata) > 0 {
-		objectMetadata = make(map[string]string, len(metadata))
-		for k, v := range metadata {
-			if k == "" {
-				continue
-			}
-			objectMetadata[strings.ToLower(k)] = v
-		}
-	}
-
 	createInput := &s3.CreateMultipartUploadInput{
 		Bucket:      aws.String(s.bucketName),
 		Key:         aws.String(objectKey),
-		Metadata:    objectMetadata,
+		Metadata:    metadata,
 		ContentType: aws.String("application/octet-stream"),
 	}
 
