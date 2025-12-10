@@ -18,7 +18,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func NewStorage(t *testing.T) storage.BlobStorageBacked {
+func NewStorage(t *testing.T) storage.BlobStorageBackend {
 	return NewMultipartStorage(t)
 }
 

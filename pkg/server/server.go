@@ -20,7 +20,7 @@ var DefaultProtocolFactories = []protocols.CachingProtocolFactory{
 	&http_cache.HttpCacheProtocolFactory{},
 }
 
-func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBacked, protocols ...protocols.CachingProtocolFactory) (*http.Server, error) {
+func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBackend, protocols ...protocols.CachingProtocolFactory) (*http.Server, error) {
 	if len(protocols) == 0 {
 		protocols = DefaultProtocolFactories
 	}
@@ -43,7 +43,7 @@ func Start(ctx context.Context, listener net.Listener, backend storage.BlobStora
 	return httpServer, nil
 }
 
-func createMux(backend storage.BlobStorageBacked, protocols ...protocols.CachingProtocolFactory) (*http.ServeMux, error) {
+func createMux(backend storage.BlobStorageBackend, protocols ...protocols.CachingProtocolFactory) (*http.ServeMux, error) {
 	maxConcurrentConnections := runtime.NumCPU() * activeRequestsPerLogicalCPU
 
 	httpClient := &http.Client{

@@ -31,13 +31,13 @@ type MultipartUploadPart struct {
 	ETag       string
 }
 
-type BlobStorageBacked interface {
+type BlobStorageBackend interface {
 	DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error)
 	UploadURL(ctx context.Context, key string, metadate map[string]string) (*URLInfo, error)
 }
 
 type MultipartBlobStorageBackend interface {
-	BlobStorageBacked
+	BlobStorageBackend
 
 	CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (uploadID string, err error)
 	UploadPartURL(ctx context.Context, key string, uploadID string, partNumber uint32, contentLength uint64) (*URLInfo, error)
