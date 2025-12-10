@@ -36,7 +36,7 @@ type BlobStorageBacked interface {
 	UploadURL(ctx context.Context, key string, metadate map[string]string) (*URLInfo, error)
 }
 
-type MultipartBlobStorageBacked interface {
+type MultipartBlobStorageBackend interface {
 	BlobStorageBacked
 
 	CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (uploadID string, err error)

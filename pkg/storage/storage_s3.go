@@ -32,7 +32,7 @@ type s3Storage struct {
 	bucketReady bool
 }
 
-func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (MultipartBlobStorageBacked, error) {
+func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (MultipartBlobStorageBackend, error) {
 	if client == nil {
 		return nil, fmt.Errorf("storage: s3 client must not be nil")
 	}
