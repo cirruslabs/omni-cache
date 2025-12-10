@@ -18,7 +18,7 @@ func (factory *HttpCacheProtocolFactory) ID() string {
 	return "http-cache"
 }
 
-func (factory *HttpCacheProtocolFactory) NewInstance(storagBackend storage.BlobStorageBacked, httpClient *http.Client) (protocols.CachingProtocol, error) {
+func (factory *HttpCacheProtocolFactory) NewInstance(storagBackend storage.BlobStorageBackend, httpClient *http.Client) (protocols.CachingProtocol, error) {
 	return &internalHTTPCache{
 		storagBackend: storagBackend,
 		urlProxy:      urlproxy.NewProxy(urlproxy.WithHTTPClient(httpClient)),
@@ -29,7 +29,7 @@ type internalHTTPCache struct {
 	http.Handler
 	protocols.CachingProtocol
 	urlProxy      *urlproxy.Proxy
-	storagBackend storage.BlobStorageBacked
+	storagBackend storage.BlobStorageBackend
 }
 
 func (httpCache *internalHTTPCache) Register(mux *http.ServeMux) error {

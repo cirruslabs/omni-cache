@@ -8,7 +8,7 @@ import (
 
 type CachingProtocolFactory interface {
 	ID() string
-	NewInstance(storagBackend storage.BlobStorageBacked, httpClient *http.Client) (CachingProtocol, error)
+	NewInstance(storagBackend storage.BlobStorageBackend, httpClient *http.Client) (CachingProtocol, error)
 }
 
 type CachingProtocol interface {

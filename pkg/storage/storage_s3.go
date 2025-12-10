@@ -32,7 +32,7 @@ type s3Storage struct {
 	bucketReady bool
 }
 
-func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (BlobStorageBacked, error) {
+func NewS3Storage(ctx context.Context, client *s3.Client, bucketName string, prefix ...string) (MultipartBlobStorageBackend, error) {
 	if client == nil {
 		return nil, fmt.Errorf("storage: s3 client must not be nil")
 	}
@@ -51,12 +51,17 @@ func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (BlobS
 		}
 	}
 
-	return &s3Storage{
+	result := &s3Storage{
 		client:        client,
 		presignClient: s3.NewPresignClient(client),
 		bucketName:    bucketName,
 		prefix:        normalizedPrefix,
-	}, nil
+	}
+
+	if err := result.ensureBucketExists(ctx); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (s *s3Storage) ensureBucketExists(ctx context.Context) error {
@@ -109,10 +114,6 @@ func (s *s3Storage) objectKey(key string) string {
 }
 
 func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error) {
-	if err := s.ensureBucketExists(ctx); err != nil {
-		return nil, err
-	}
-
 	objectKey := s.objectKey(key)
 	headInput := &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucketName),
@@ -139,10 +140,6 @@ func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, e
 }
 
 func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[string]string) (*URLInfo, error) {
-	if err := s.ensureBucketExists(ctx); err != nil {
-		return nil, err
-	}
-
 	objectKey := s.objectKey(key)
 
 	var objectMetadata map[string]string
@@ -163,9 +160,7 @@ func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[stri
 		ContentType: aws.String("application/octet-stream"),
 	}
 
-	presigned, err := s.presignClient.PresignPutObject(ctx, putInput, func(po *s3.PresignOptions) {
-		po.Expires = defaultPresignExpiration
-	})
+	presigned, err := s.presignClient.PresignPutObject(ctx, putInput, s3.WithPresignExpires(defaultPresignExpiration))
 	if err != nil {
 		return nil, err
 	}
@@ -194,9 +189,7 @@ func (s *s3Storage) presignGet(ctx context.Context, objectKey string) (*URLInfo,
 	presigned, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(objectKey),
-	}, func(po *s3.PresignOptions) {
-		po.Expires = defaultPresignExpiration
-	})
+	}, s3.WithPresignExpires(defaultPresignExpiration))
 	if err != nil {
 		return nil, err
 	}
@@ -208,9 +201,7 @@ func (s *s3Storage) presignHead(ctx context.Context, objectKey string) (*URLInfo
 	presigned, err := s.presignClient.PresignHeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(objectKey),
-	}, func(po *s3.PresignOptions) {
-		po.Expires = defaultPresignExpiration
-	})
+	}, s3.WithPresignExpires(defaultPresignExpiration))
 	if err != nil {
 		return nil, err
 	}
@@ -246,4 +237,65 @@ func extractRelevantHeaders(headers http.Header) map[string]string {
 	}
 
 	return extra
+}
+
+func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (string, error) {
+	objectKey := s.objectKey(key)
+
+	createInput := &s3.CreateMultipartUploadInput{
+		Bucket:      aws.String(s.bucketName),
+		Key:         aws.String(objectKey),
+		Metadata:    metadata,
+		ContentType: aws.String("application/octet-stream"),
+	}
+
+	result, err := s.client.CreateMultipartUpload(ctx, createInput)
+	if err != nil {
+		return "", err
+	}
+
+	return *result.UploadId, nil
+}
+
+func (s *s3Storage) UploadPartURL(ctx context.Context, key string, uploadID string, partNumber uint32, contentLength uint64) (*URLInfo, error) {
+	objectKey := s.objectKey(key)
+
+	uploadPartInput := &s3.UploadPartInput{
+		Bucket:        aws.String(s.bucketName),
+		Key:           aws.String(objectKey),
+		UploadId:      aws.String(uploadID),
+		PartNumber:    aws.Int32(int32(partNumber)),
+		ContentLength: aws.Int64(int64(contentLength)),
+	}
+
+	presigned, err := s.presignClient.PresignUploadPart(ctx, uploadPartInput, s3.WithPresignExpires(defaultPresignExpiration))
+	if err != nil {
+		return nil, err
+	}
+
+	return buildURLInfo(presigned), nil
+}
+
+func (s *s3Storage) CommitMultipartUpload(ctx context.Context, key string, uploadID string, parts []MultipartUploadPart) error {
+	objectKey := s.objectKey(key)
+
+	completedParts := make([]types.CompletedPart, len(parts))
+	for i, part := range parts {
+		completedParts[i] = types.CompletedPart{
+			PartNumber: aws.Int32(int32(part.PartNumber)),
+			ETag:       aws.String(part.ETag),
+		}
+	}
+
+	completeInput := &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(s.bucketName),
+		Key:      aws.String(objectKey),
+		UploadId: aws.String(uploadID),
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: completedParts,
+		},
+	}
+
+	_, err := s.client.CompleteMultipartUpload(ctx, completeInput)
+	return err
 }
