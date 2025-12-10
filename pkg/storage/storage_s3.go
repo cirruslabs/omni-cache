@@ -32,7 +32,7 @@ type s3Storage struct {
 	bucketReady bool
 }
 
-func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (MultipartBlobStorageBackend, error) {
+func NewS3Storage(ctx context.Context, client *s3.Client, bucketName string, prefix ...string) (MultipartBlobStorageBackend, error) {
 	if client == nil {
 		return nil, fmt.Errorf("storage: s3 client must not be nil")
 	}
@@ -51,12 +51,17 @@ func NewS3Storage(client *s3.Client, bucketName string, prefix ...string) (Multi
 		}
 	}
 
-	return &s3Storage{
+	result := &s3Storage{
 		client:        client,
 		presignClient: s3.NewPresignClient(client),
 		bucketName:    bucketName,
 		prefix:        normalizedPrefix,
-	}, nil
+	}
+
+	if err := result.ensureBucketExists(ctx); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (s *s3Storage) ensureBucketExists(ctx context.Context) error {
@@ -109,10 +114,6 @@ func (s *s3Storage) objectKey(key string) string {
 }
 
 func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error) {
-	if err := s.ensureBucketExists(ctx); err != nil {
-		return nil, err
-	}
-
 	objectKey := s.objectKey(key)
 	headInput := &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucketName),
@@ -139,10 +140,6 @@ func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, e
 }
 
 func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[string]string) (*URLInfo, error) {
-	if err := s.ensureBucketExists(ctx); err != nil {
-		return nil, err
-	}
-
 	objectKey := s.objectKey(key)
 
 	var objectMetadata map[string]string
@@ -249,10 +246,6 @@ func extractRelevantHeaders(headers http.Header) map[string]string {
 }
 
 func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (string, error) {
-	if err := s.ensureBucketExists(ctx); err != nil {
-		return "", err
-	}
-
 	objectKey := s.objectKey(key)
 
 	createInput := &s3.CreateMultipartUploadInput{
@@ -271,10 +264,6 @@ func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metad
 }
 
 func (s *s3Storage) UploadPartURL(ctx context.Context, key string, uploadID string, partNumber uint32, contentLength uint64) (*URLInfo, error) {
-	if err := s.ensureBucketExists(ctx); err != nil {
-		return nil, err
-	}
-
 	objectKey := s.objectKey(key)
 
 	uploadPartInput := &s3.UploadPartInput{
@@ -296,10 +285,6 @@ func (s *s3Storage) UploadPartURL(ctx context.Context, key string, uploadID stri
 }
 
 func (s *s3Storage) CommitMultipartUpload(ctx context.Context, key string, uploadID string, parts []MultipartUploadPart) error {
-	if err := s.ensureBucketExists(ctx); err != nil {
-		return err
-	}
-
 	objectKey := s.objectKey(key)
 
 	completedParts := make([]types.CompletedPart, len(parts))
