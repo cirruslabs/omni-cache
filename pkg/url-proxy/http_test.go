@@ -64,7 +64,7 @@ func TestProxyDownloadFromURL_CustomHTTPClient(t *testing.T) {
 	})
 
 	rec := httptest.NewRecorder()
-	ok := proxy.ProxyDownloadFromURL(context.Background(), rec, &storage.URLInfo{URL: "http://example.com/cache"}, "res")
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rec, &storage.URLInfo{URL: "http://example.com/cache"}, "res", nil)
 	require.True(t, ok)
 
 	require.True(t, recordingTransport.called)

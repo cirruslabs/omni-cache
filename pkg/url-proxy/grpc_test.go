@@ -133,7 +133,7 @@ func TestProxyDownloadFromURL_GRPC(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key")
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key", nil)
 	require.True(t, ok)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.Equal(t, "hello world", rr.Body.String())
@@ -186,7 +186,7 @@ func TestProxyDownloadFromURL_GRPCCustomDialOption(t *testing.T) {
 	proxy := NewProxy(WithGRPCDialOptions(customDialer))
 
 	rr := httptest.NewRecorder()
-	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, &storage.URLInfo{URL: "grpc://" + address}, "cache-key")
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, &storage.URLInfo{URL: "grpc://" + address}, "cache-key", nil)
 	require.True(t, ok)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.True(t, dialerCalled)
@@ -208,7 +208,7 @@ func TestProxyDownloadFromURL_UnixGRPC(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key")
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key", nil)
 	require.True(t, ok)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.Equal(t, "unix grpc", rr.Body.String())
@@ -274,7 +274,7 @@ func TestProxyDownloadFromURL_GRPC_Error(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key")
+	ok := proxy.ProxyDownloadFromURL(context.Background(), rr, info, "cache-key", nil)
 
 	// The proxy should return false to indicate failure
 	require.False(t, ok)
