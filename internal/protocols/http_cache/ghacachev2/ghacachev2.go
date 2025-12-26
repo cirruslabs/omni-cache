@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/cirruslabs/cirrus-cli/pkg/api/gharesults"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/azureblob"
-	agentstorage "github.com/cirruslabs/omni-cache/internal/protocols/storage"
+	agentstorage "github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/samber/lo"
 	"github.com/twitchtv/twirp"
 	"google.golang.org/grpc/codes"
