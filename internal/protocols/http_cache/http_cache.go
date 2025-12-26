@@ -16,7 +16,6 @@ import (
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/ghacachev2"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/grpcutils"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
-	agentstorage "github.com/cirruslabs/omni-cache/pkg/storage"
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 	sentryhttp "github.com/getsentry/sentry-go/http"
 	"golang.org/x/sync/semaphore"
@@ -34,7 +33,7 @@ type HTTPCache struct {
 	httpClient    *http.Client
 	azureBlobOpts []azureblob.Option
 	proxy         *urlproxy.Proxy
-	backend       agentstorage.MultipartBlobStorageBackend
+	backend       storage.MultipartBlobStorageBackend
 }
 
 var sem = semaphore.NewWeighted(int64(runtime.NumCPU() * activeRequestsPerLogicalCPU))
@@ -51,7 +50,7 @@ func DefaultTransport() *http.Transport {
 func Start(
 	ctx context.Context,
 	transport http.RoundTripper,
-	backend agentstorage.MultipartBlobStorageBackend,
+	backend storage.MultipartBlobStorageBackend,
 	opts ...Option,
 ) string {
 	if backend == nil {
