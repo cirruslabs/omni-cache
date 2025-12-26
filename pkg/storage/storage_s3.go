@@ -14,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/google/uuid"
 )
 
@@ -113,6 +115,32 @@ func (s *s3Storage) objectKey(key string) string {
 	return path.Join(parts...)
 }
 
+func (s *s3Storage) CacheInfo(ctx context.Context, key string) (*BlobInfo, error) {
+	objectKey := s.objectKey(key)
+	headInput := &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(objectKey),
+	}
+
+	result, err := s.client.HeadObject(ctx, headInput)
+	if err != nil {
+		if isObjectNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	info := &BlobInfo{
+		ExtraHeaders: result.Metadata,
+	}
+
+	if result.ContentLength != nil {
+		info.SizeInBytes = uint64(*result.ContentLength)
+	}
+
+	return info, nil
+}
+
 func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error) {
 	objectKey := s.objectKey(key)
 	headInput := &s3.HeadObjectInput{
@@ -137,6 +165,23 @@ func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, e
 	}
 
 	return urls, nil
+}
+
+func (s *s3Storage) DeleteCache(ctx context.Context, key string) error {
+	objectKey := s.objectKey(key)
+	deleteInput := &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(objectKey),
+	}
+
+	if _, err := s.client.DeleteObject(ctx, deleteInput); err != nil {
+		if isObjectNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[string]string) (*URLInfo, error) {
@@ -237,6 +282,25 @@ func extractRelevantHeaders(headers http.Header) map[string]string {
 	}
 
 	return extra
+}
+
+func isObjectNotFound(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFound", "NoSuchKey":
+			return true
+		default:
+			return false
+		}
+	}
+
+	var respErr *smithyhttp.ResponseError
+	if errors.As(err, &respErr) {
+		return respErr.HTTPStatusCode() == http.StatusNotFound
+	}
+
+	return false
 }
 
 func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (string, error) {
