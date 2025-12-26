@@ -3,28 +3,27 @@ package http_cache_test
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/cirruslabs/omni-cache/internal/testutil"
-	"github.com/cirruslabs/omni-cache/pkg/server"
+	"github.com/cirruslabs/cirrus-cli/internal/testutil"
+	"github.com/cirruslabs/cirrus-cli/pkg/api"
+	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache"
+	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/ghacache/cirruscimock"
+	agentstorage "github.com/cirruslabs/omni-cache/internal/protocols/storage"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHTTPCache(t *testing.T) {
-	storage := testutil.NewStorage(t)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	testServer, serverStartError := server.Start(t.Context(), listener, storage)
-	require.NoError(t, serverStartError)
-	t.Cleanup(func() {
-		testServer.Shutdown(context.Background())
-	})
+	testutil.NeedsContainerization(t)
 
-	httpCacheObjectURL := "http://" + listener.Addr().String() + "/cache/" + uuid.NewString() + "/test.txt"
+	conn := cirruscimock.ClientConn(t)
+	backend := agentstorage.NewCirrusStoreBackend(api.NewCirrusCIServiceClient(conn), api.OldTaskIdentification("test", "test"))
+
+	httpCacheObjectURL := "http://" + http_cache.Start(context.Background(), http_cache.DefaultTransport(), backend) +
+		"/cache/" + uuid.NewString() + "/test.txt"
 
 	// Ensure that the cache entry does not exist
 	resp, err := http.Get(httpCacheObjectURL)
@@ -38,7 +37,7 @@ func TestHTTPCache(t *testing.T) {
 	// Create the cache entry
 	resp, err = http.Post(httpCacheObjectURL, "text/plain", strings.NewReader("Hello, World!"))
 	require.NoError(t, err)
-	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Ensure that the cache entry now exists
 	resp, err = http.Head(httpCacheObjectURL)
