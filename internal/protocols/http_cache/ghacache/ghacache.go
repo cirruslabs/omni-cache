@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/ghacache/httprange"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/ghacache/uploadable"
-	agentstorage "github.com/cirruslabs/omni-cache/internal/protocols/storage"
+	agentstorage "github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/render"
 	"github.com/puzpuzpuz/xsync/v3"

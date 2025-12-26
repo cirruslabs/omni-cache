@@ -11,7 +11,7 @@ import (
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/ghacache/cirruscimock"
-	agentstorage "github.com/cirruslabs/omni-cache/internal/protocols/storage"
+	agentstorage "github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
