@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cirruslabs/omni-cache/internal/testutil"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
@@ -164,6 +165,56 @@ func TestMultipartUploadOutOfOrderParts(t *testing.T) {
 
 	expectedData := append(append(part1Data, part2Data...), part3Data...)
 	require.Equal(t, expectedData, downloadedData)
+}
+
+func TestCacheInfoAndDeleteCache(t *testing.T) {
+	ctx := context.Background()
+	stor := testutil.NewStorage(t)
+
+	missingKey := "cache-info-missing/" + uuid.NewString()
+	info, err := stor.CacheInfo(ctx, missingKey)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
+	err = stor.DeleteCache(ctx, missingKey)
+	require.NoError(t, err)
+
+	key := "cache-info/" + uuid.NewString()
+	payload := []byte("hello cache info")
+	metadata := map[string]string{
+		"Foo": "bar",
+	}
+
+	urlInfo, err := stor.UploadURL(ctx, key, metadata)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPut, urlInfo.URL, bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	req.ContentLength = int64(len(payload))
+	for headerKey, headerValue := range urlInfo.ExtraHeaders {
+		req.Header.Set(headerKey, headerValue)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	info, err = stor.CacheInfo(ctx, key)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.Equal(t, uint64(len(payload)), info.SizeInBytes)
+	require.Equal(t, "application/octet-stream", info.ExtraHeaders["Content-Type"])
+	require.Equal(t, "bar", info.ExtraHeaders["x-amz-meta-foo"])
+
+	err = stor.DeleteCache(ctx, key)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		info, err := stor.CacheInfo(ctx, key)
+		return err == nil && info == nil
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func uploadPart(t *testing.T, urlInfo *storage.URLInfo, data []byte) string {
