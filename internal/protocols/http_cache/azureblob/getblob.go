@@ -8,11 +8,12 @@ import (
 	"net/http"
 	"time"
 
+	"log/slog"
+
+	"github.com/cirruslabs/omni-cache/internal/progressreader"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/azureblob/simplerange"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/azureblob/unexpectedeofreader"
-	"github.com/cirruslabs/omni-cache/internal/protocols/progressreader"
 	"github.com/dustin/go-humanize"
-	"log/slog"
 )
 
 const PROXY_DOWNLOAD_BUFFER_SIZE = 1024 * 1024
