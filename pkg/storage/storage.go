@@ -11,6 +11,11 @@ type URLInfo struct {
 	ExtraHeaders map[string]string
 }
 
+type BlobInfo struct {
+	SizeInBytes  uint64
+	ExtraHeaders map[string]string
+}
+
 // Scheme returns the lower-case URL scheme or empty string if parsing fails.
 func (info *URLInfo) Scheme() string {
 	if info == nil {
@@ -32,8 +37,10 @@ type MultipartUploadPart struct {
 }
 
 type BlobStorageBackend interface {
+	CacheInfo(ctx context.Context, key string) (*BlobInfo, error)
 	DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error)
 	UploadURL(ctx context.Context, key string, metadate map[string]string) (*URLInfo, error)
+	DeleteCache(ctx context.Context, key string) error
 }
 
 type MultipartBlobStorageBackend interface {

@@ -179,19 +179,19 @@ func (httpCache *HTTPCache) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (httpCache *HTTPCache) checkCacheExists(w http.ResponseWriter, r *http.Request, cacheKey string) {
-	info, err := httpCache.backend.CacheInfo(r.Context(), cacheKey, nil)
+	info, err := httpCache.backend.CacheInfo(r.Context(), cacheKey)
 	if err != nil {
 		slog.Error("Cache info failed", "cache_key", cacheKey, "err", err)
-		w.WriteHeader(http.StatusNotFound)
-	} else {
-		if info.OldCreatedByTaskId > 0 {
-			w.Header().Set(CirrusHeaderCreatedBy, strconv.FormatInt(info.OldCreatedByTaskId, 10))
-		} else if info.CreatedByTaskId != "" {
-			w.Header().Set(CirrusHeaderCreatedBy, info.CreatedByTaskId)
-		}
-		w.Header().Set("Content-Length", strconv.FormatInt(info.SizeInBytes, 10))
-		w.WriteHeader(http.StatusOK)
 	}
+	if info == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	for k, v := range info.ExtraHeaders {
+		w.Header().Set(k, v)
+	}
+	w.Header().Set("Content-Length", strconv.FormatUint(info.SizeInBytes, 10))
+	w.WriteHeader(http.StatusOK)
 }
 
 func (httpCache *HTTPCache) downloadCache(w http.ResponseWriter, r *http.Request, cacheKey string) {
