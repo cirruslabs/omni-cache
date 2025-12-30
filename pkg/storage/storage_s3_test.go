@@ -206,7 +206,7 @@ func TestCacheInfoAndDeleteCache(t *testing.T) {
 	require.NotNil(t, info)
 	require.Equal(t, uint64(len(payload)), info.SizeInBytes)
 	require.Equal(t, "application/octet-stream", info.ExtraHeaders["Content-Type"])
-	require.Equal(t, "bar", info.ExtraHeaders["x-amz-meta-foo"])
+	require.Equal(t, "bar", info.ExtraHeaders["foo"])
 
 	err = stor.DeleteCache(ctx, key)
 	require.NoError(t, err)
