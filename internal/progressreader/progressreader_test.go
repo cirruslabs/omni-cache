@@ -1,14 +1,15 @@
 package progressreader_test
 
 import (
-	"github.com/cirruslabs/cirrus-cli/internal/agent/progressreader"
-	"github.com/dustin/go-humanize"
-	"github.com/stretchr/testify/require"
 	"io"
 	"log/slog"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/cirruslabs/omni-cache/internal/progressreader"
+	"github.com/dustin/go-humanize"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProgressReader(t *testing.T) {
