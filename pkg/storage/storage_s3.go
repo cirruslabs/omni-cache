@@ -133,6 +133,7 @@ func (s *s3Storage) CacheInfo(ctx context.Context, key string) (*BlobInfo, error
 	info := &BlobInfo{
 		ExtraHeaders: result.Metadata,
 	}
+	info.ExtraHeaders["Content-Type"] = "application/octet-stream"
 
 	if result.ContentLength != nil {
 		info.SizeInBytes = uint64(*result.ContentLength)
