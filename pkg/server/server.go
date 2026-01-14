@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/cirruslabs/omni-cache/internal/protocols/ghacache"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache"
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
@@ -18,6 +19,7 @@ const (
 
 var DefaultProtocolFactories = []protocols.CachingProtocolFactory{
 	&http_cache.HttpCacheProtocolFactory{},
+	&ghacache.GHACacheProtocolFactory{},
 }
 
 func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBackend, protocols ...protocols.CachingProtocolFactory) (*http.Server, error) {

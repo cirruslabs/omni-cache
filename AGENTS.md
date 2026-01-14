@@ -1,7 +1,10 @@
 # Repository Guidelines
 
+Always ALWAYS make sure tests are passing and there are no lint errors before claiming work is done.
+
 ## Project Structure & Module Organization
 - `cmd/omni-cache`: entrypoint binary (wire server and protocol factories here).
+- `api` folder contains gRPC service definitions. Always run `buf generate` to generate Go code.
 - `pkg/server`: HTTP server bootstrap that registers caching protocols.
 - `pkg/protocols`: interfaces for pluggable caching protocols.
 - `internal/protocols/http_cache`: HTTP cache implementation and end-to-end tests.
@@ -26,6 +29,7 @@
 - Primary framework is the Go testing package with `testify/require` for assertions.
 - Tests expect Docker available to launch LocalStack (S3 emulation).
 - Add focused tests next to the code they cover (e.g., `pkg/url-proxy/grpc_test.go`, `internal/protocols/http_cache/http_cache_test.go`).
+- ALWAYS make sure tests are passing before claiming work is done. No need to confirm it.
 
 ## Commit & Pull Request Guidelines
 - Commit messages follow the concise, imperative style seen in history (e.g., `Add gRPC tests for ProxyUploadToURL`).
