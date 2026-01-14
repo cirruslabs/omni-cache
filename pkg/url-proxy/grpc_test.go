@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -111,11 +113,40 @@ func startByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string
 func startUnixByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string {
 	t.Helper()
 
-	socketPath := filepath.Join(t.TempDir(), "bytestream.sock")
+	if runtime.GOOS == "windows" {
+		t.Skip("unix sockets are not supported on Windows")
+	}
+
+	// Keep the unix socket path short to avoid platform-specific length limits.
+	socketPath := filepath.Join(shortTempDir(t), "bytestream.sock")
 	lis, err := net.Listen("unix", socketPath)
 	require.NoError(t, err)
 
 	return startByteStreamServerWithListener(t, lis, srv)
+}
+
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+
+	candidates := []string{"/tmp", os.TempDir()}
+	for _, base := range candidates {
+		if base == "" {
+			continue
+		}
+
+		dir, err := os.MkdirTemp(base, "omni-cache-")
+		if err != nil {
+			continue
+		}
+
+		t.Cleanup(func() {
+			_ = os.RemoveAll(dir)
+		})
+
+		return dir
+	}
+
+	return t.TempDir()
 }
 
 func TestProxyDownloadFromURL_GRPC(t *testing.T) {
