@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Always ALWAYS make sure tests are passing and there are no lint errors before claiming work is done.
+
 ## Project Structure & Module Organization
 - `cmd/omni-cache`: entrypoint binary (wire server and protocol factories here).
 - `api` folder contains gRPC service definitions. Always run `buf generate` to generate Go code.

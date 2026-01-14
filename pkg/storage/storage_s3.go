@@ -373,11 +373,7 @@ func isNotFoundError(err error) bool {
 	}
 
 	var noSuchKey *types.NoSuchKey
-	if errors.As(err, &noSuchKey) {
-		return true
-	}
-
-	return false
+	return errors.As(err, &noSuchKey)
 }
 
 func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (string, error) {
