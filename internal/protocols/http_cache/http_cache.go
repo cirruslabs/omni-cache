@@ -18,34 +18,32 @@ func (factory *HttpCacheProtocolFactory) ID() string {
 	return "http-cache"
 }
 
-func (factory *HttpCacheProtocolFactory) NewInstance(env protocols.Environment) (protocols.CachingProtocol, error) {
-	proxy := env.Proxy
-	if proxy == nil {
-		proxy = urlproxy.NewProxy(urlproxy.WithHTTPClient(env.HTTPClient))
-	}
+func (factory *HttpCacheProtocolFactory) NewInstance(storagBackend storage.BlobStorageBackend, httpClient *http.Client) (protocols.CachingProtocol, error) {
 	return &internalHTTPCache{
-		storageBackend: env.Storage,
-		urlProxy:       proxy,
+		storagBackend: storagBackend,
+		urlProxy:      urlproxy.NewProxy(urlproxy.WithHTTPClient(httpClient)),
 	}, nil
 }
 
 type internalHTTPCache struct {
-	urlProxy       *urlproxy.Proxy
-	storageBackend storage.BlobStorageBackend
+	http.Handler
+	protocols.CachingProtocol
+	urlProxy      *urlproxy.Proxy
+	storagBackend storage.BlobStorageBackend
 }
 
-func (httpCache *internalHTTPCache) Register(registry *protocols.Registry) error {
-	registry.HandleFunc("GET /{key...}", httpCache.downloadCache)
-	registry.HandleFunc("HEAD /{key...}", httpCache.downloadCache)
-	registry.HandleFunc("POST /{key...}", httpCache.uploadCacheEntry)
-	registry.HandleFunc("PUT /{key...}", httpCache.uploadCacheEntry)
+func (httpCache *internalHTTPCache) Register(mux *http.ServeMux) error {
+	mux.HandleFunc("GET /{key...}", httpCache.downloadCache)
+	mux.HandleFunc("HEAD /{key...}", httpCache.downloadCache)
+	mux.HandleFunc("POST /{key...}", httpCache.uploadCacheEntry)
+	mux.HandleFunc("PUT /{key...}", httpCache.uploadCacheEntry)
 	return nil
 }
 
 func (httpCache *internalHTTPCache) downloadCache(w http.ResponseWriter, r *http.Request) {
 	cacheKey := r.PathValue("key")
 
-	infos, err := httpCache.storageBackend.DownloadURLs(r.Context(), cacheKey)
+	infos, err := httpCache.storagBackend.DownloadURLs(r.Context(), cacheKey)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "cache download failed", "cacheKey", cacheKey, "err", err)
 		w.WriteHeader(http.StatusNotFound)
@@ -69,7 +67,7 @@ func (httpCache *internalHTTPCache) proxyDownloadFromURLs(w http.ResponseWriter,
 func (httpCache *internalHTTPCache) uploadCacheEntry(w http.ResponseWriter, r *http.Request) {
 	cacheKey := r.PathValue("key")
 
-	info, err := httpCache.storageBackend.UploadURL(r.Context(), cacheKey, nil)
+	info, err := httpCache.storagBackend.UploadURL(r.Context(), cacheKey, nil)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to initialized uploading of %s cache! %s", cacheKey, err)
 		slog.ErrorContext(r.Context(), "failed to initialize cache upload", "cacheKey", cacheKey, "err", err)

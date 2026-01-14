@@ -4,20 +4,13 @@ import (
 	"net/http"
 
 	"github.com/cirruslabs/omni-cache/pkg/storage"
-	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
-
-type Environment struct {
-	Storage    storage.BlobStorageBackend
-	HTTPClient *http.Client
-	Proxy      *urlproxy.Proxy
-}
 
 type CachingProtocolFactory interface {
 	ID() string
-	NewInstance(env Environment) (CachingProtocol, error)
+	NewInstance(storagBackend storage.BlobStorageBackend, httpClient *http.Client) (CachingProtocol, error)
 }
 
 type CachingProtocol interface {
-	Register(registry *Registry) error
+	Register(mux *http.ServeMux) error
 }

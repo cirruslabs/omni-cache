@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -112,29 +111,11 @@ func startByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string
 func startUnixByteStreamServer(t *testing.T, srv bytestream.ByteStreamServer) string {
 	t.Helper()
 
-	socketPath := filepath.Join(shortUnixSocketDir(t), "bytestream.sock")
+	socketPath := filepath.Join(t.TempDir(), "bytestream.sock")
 	lis, err := net.Listen("unix", socketPath)
 	require.NoError(t, err)
 
 	return startByteStreamServerWithListener(t, lis, srv)
-}
-
-func shortUnixSocketDir(t *testing.T) string {
-	t.Helper()
-
-	baseDir := os.TempDir()
-	if info, err := os.Stat("/tmp"); err == nil && info.IsDir() {
-		baseDir = "/tmp"
-	}
-
-	dir, err := os.MkdirTemp(baseDir, "omni-cache-")
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-
-	return dir
 }
 
 func TestProxyDownloadFromURL_GRPC(t *testing.T) {

@@ -5,16 +5,11 @@ import (
 	"net"
 	"net/http"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache"
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
-	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -30,7 +25,7 @@ func Start(ctx context.Context, listener net.Listener, backend storage.BlobStora
 		protocols = DefaultProtocolFactories
 	}
 
-	handler, grpcServer, err := createHandler(backend, protocols...)
+	mux, err := createMux(backend, protocols...)
 	if err != nil {
 		return nil, err
 	}
@@ -42,16 +37,13 @@ func Start(ctx context.Context, listener net.Listener, backend storage.BlobStora
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
-		Handler: handler,
-	}
-	if grpcServer != nil {
-		httpServer.RegisterOnShutdown(grpcServer.GracefulStop)
+		Handler: mux,
 	}
 	go httpServer.Serve(listener)
 	return httpServer, nil
 }
 
-func createHandler(backend storage.BlobStorageBackend, protocolFactories ...protocols.CachingProtocolFactory) (http.Handler, *grpc.Server, error) {
+func createMux(backend storage.BlobStorageBackend, protocols ...protocols.CachingProtocolFactory) (*http.ServeMux, error) {
 	maxConcurrentConnections := runtime.NumCPU() * activeRequestsPerLogicalCPU
 
 	httpClient := &http.Client{
@@ -63,38 +55,16 @@ func createHandler(backend storage.BlobStorageBackend, protocolFactories ...prot
 	}
 
 	mux := http.NewServeMux()
-	grpcServer := grpc.NewServer()
-	proxy := urlproxy.NewProxy(urlproxy.WithHTTPClient(httpClient))
-	env := protocols.Environment{
-		Storage:    backend,
-		HTTPClient: httpClient,
-		Proxy:      proxy,
-	}
-	registry := protocols.NewRegistry(mux, grpcServer)
 
-	for _, registeredProtocolFactory := range protocolFactories {
-		cachingProtocol, err := registeredProtocolFactory.NewInstance(env)
+	for _, registeredProtocolFactory := range protocols {
+		cachingProtocol, err := registeredProtocolFactory.NewInstance(backend, httpClient)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		if err := cachingProtocol.Register(registry); err != nil {
-			return nil, nil, err
+		if err := cachingProtocol.Register(mux); err != nil {
+			return nil, err
 		}
 	}
 
-	if registry.HasGRPC() {
-		return grpcHandler(grpcServer, mux), grpcServer, nil
-	}
-
-	return mux, nil, nil
-}
-
-func grpcHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
-	return h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			grpcServer.ServeHTTP(w, r)
-			return
-		}
-		httpHandler.ServeHTTP(w, r)
-	}), &http2.Server{})
+	return mux, nil
 }
