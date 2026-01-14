@@ -1,0 +1,15 @@
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.3
+    out: internal/
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go:v1.5.1
+    out: internal/coe
+    opt: paths=source_relative
+  # Use local generation, as recommended in https://github.com/bufbuild/plugins/issues/58:
+  #
+  # >We're not actively working on supporting the twitchtv/twirp plugin on the BSR at the moment.
+  # >For now we recommend that users use local generation with buf.gen.yaml.
+  - local: protoc-gen-twirp
+    out: internal/
+    opt: paths=source_relative

@@ -2,6 +2,7 @@
 
 ## Project Structure & Module Organization
 - `cmd/omni-cache`: entrypoint binary (wire server and protocol factories here).
+- `api` folder contains gRPC service definitions. Always run `buf generate` to generate Go code.
 - `pkg/server`: HTTP server bootstrap that registers caching protocols.
 - `pkg/protocols`: interfaces for pluggable caching protocols.
 - `internal/protocols/http_cache`: HTTP cache implementation and end-to-end tests.
