@@ -166,6 +166,42 @@ func TestMultipartUploadOutOfOrderParts(t *testing.T) {
 	require.Equal(t, expectedData, downloadedData)
 }
 
+func TestCacheInfoExactMatch(t *testing.T) {
+	ctx := context.Background()
+	stor := testutil.NewMultipartStorage(t)
+
+	key := "cache-info-exact/" + uuid.NewString()
+	payload := []byte("hello cache")
+
+	uploadURL, err := stor.UploadURL(ctx, key, nil)
+	require.NoError(t, err)
+
+	uploadObject(t, uploadURL, payload)
+
+	info, err := stor.CacheInfo(ctx, key, nil)
+	require.NoError(t, err)
+	require.Equal(t, key, info.Key)
+	require.EqualValues(t, len(payload), info.SizeBytes)
+}
+
+func TestCacheInfoPrefixMatch(t *testing.T) {
+	ctx := context.Background()
+	stor := testutil.NewMultipartStorage(t)
+
+	prefix := "cache-info-prefix-" + uuid.NewString() + "-"
+	key := prefix + "candidate"
+	payload := []byte("prefix match")
+
+	uploadURL, err := stor.UploadURL(ctx, key, nil)
+	require.NoError(t, err)
+
+	uploadObject(t, uploadURL, payload)
+
+	info, err := stor.CacheInfo(ctx, "missing-key", []string{prefix})
+	require.NoError(t, err)
+	require.Equal(t, key, info.Key)
+}
+
 func uploadPart(t *testing.T, urlInfo *storage.URLInfo, data []byte) string {
 	t.Helper()
 
@@ -188,4 +224,22 @@ func uploadPart(t *testing.T, urlInfo *storage.URLInfo, data []byte) string {
 	require.NotEmpty(t, etag, "ETag header should be present in response")
 
 	return etag
+}
+
+func uploadObject(t *testing.T, urlInfo *storage.URLInfo, data []byte) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPut, urlInfo.URL, bytes.NewReader(data))
+	require.NoError(t, err)
+
+	req.ContentLength = int64(len(data))
+	for key, value := range urlInfo.ExtraHeaders {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.True(t, resp.StatusCode >= 200 && resp.StatusCode < 300, "unexpected status %d", resp.StatusCode)
 }

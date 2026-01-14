@@ -14,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/google/uuid"
 )
 
@@ -111,6 +113,50 @@ func (s *s3Storage) objectKey(key string) string {
 	parts = append(parts, s.prefix...)
 	parts = append(parts, key)
 	return path.Join(parts...)
+}
+
+func (s *s3Storage) trimObjectKey(objectKey string) string {
+	objectKey = strings.TrimPrefix(objectKey, "/")
+	if len(s.prefix) == 0 {
+		return objectKey
+	}
+
+	prefixPath := strings.TrimPrefix(path.Join(s.prefix...), "/")
+	if objectKey == prefixPath {
+		return ""
+	}
+
+	trimmed := strings.TrimPrefix(objectKey, prefixPath+"/")
+	if trimmed != objectKey {
+		return trimmed
+	}
+
+	return objectKey
+}
+
+func (s *s3Storage) CacheInfo(ctx context.Context, key string, prefixes []string) (*CacheInfo, error) {
+	info, err := s.cacheInfoForKey(ctx, key)
+	if err == nil {
+		return info, nil
+	}
+	if !errors.Is(err, ErrCacheNotFound) {
+		return nil, err
+	}
+
+	for _, prefix := range prefixes {
+		if prefix == "" {
+			continue
+		}
+		info, err := s.cacheInfoForPrefix(ctx, prefix)
+		if err == nil {
+			return info, nil
+		}
+		if !errors.Is(err, ErrCacheNotFound) {
+			return nil, err
+		}
+	}
+
+	return nil, ErrCacheNotFound
 }
 
 func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error) {
@@ -237,6 +283,101 @@ func extractRelevantHeaders(headers http.Header) map[string]string {
 	}
 
 	return extra
+}
+
+func (s *s3Storage) cacheInfoForKey(ctx context.Context, key string) (*CacheInfo, error) {
+	objectKey := s.objectKey(key)
+	headInput := &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(objectKey),
+	}
+
+	headOutput, err := s.client.HeadObject(ctx, headInput)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, ErrCacheNotFound
+		}
+		return nil, err
+	}
+
+	return &CacheInfo{
+		Key:       key,
+		SizeBytes: aws.ToInt64(headOutput.ContentLength),
+	}, nil
+}
+
+func (s *s3Storage) cacheInfoForPrefix(ctx context.Context, prefix string) (*CacheInfo, error) {
+	objectPrefix := s.objectKey(prefix)
+	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucketName),
+		Prefix: aws.String(objectPrefix),
+	})
+
+	var (
+		latestKey  string
+		latestSize int64
+		latestTime time.Time
+		found      bool
+	)
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, object := range page.Contents {
+			if object.Key == nil || object.LastModified == nil {
+				continue
+			}
+
+			objectTime := *object.LastModified
+			if !found || objectTime.After(latestTime) {
+				latestKey = aws.ToString(object.Key)
+				latestSize = aws.ToInt64(object.Size)
+				latestTime = objectTime
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		return nil, ErrCacheNotFound
+	}
+
+	return &CacheInfo{
+		Key:       s.trimObjectKey(latestKey),
+		SizeBytes: latestSize,
+	}, nil
+}
+
+func isNotFoundError(err error) bool {
+	var responseErr *smithyhttp.ResponseError
+	if errors.As(err, &responseErr) {
+		if responseErr.HTTPStatusCode() == http.StatusNotFound {
+			return true
+		}
+	}
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFound", "NoSuchKey":
+			return true
+		}
+	}
+
+	var notFound *types.NotFound
+	if errors.As(err, &notFound) {
+		return true
+	}
+
+	var noSuchKey *types.NoSuchKey
+	if errors.As(err, &noSuchKey) {
+		return true
+	}
+
+	return false
 }
 
 func (s *s3Storage) CreateMultipartUpload(ctx context.Context, key string, metadata map[string]string) (string, error) {

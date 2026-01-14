@@ -27,6 +27,7 @@
 - Primary framework is the Go testing package with `testify/require` for assertions.
 - Tests expect Docker available to launch LocalStack (S3 emulation).
 - Add focused tests next to the code they cover (e.g., `pkg/url-proxy/grpc_test.go`, `internal/protocols/http_cache/http_cache_test.go`).
+- ALWAYS make sure tests are passing before claiming work is done. No need to confirm it.
 
 ## Commit & Pull Request Guidelines
 - Commit messages follow the concise, imperative style seen in history (e.g., `Add gRPC tests for ProxyUploadToURL`).

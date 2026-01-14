@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 )
@@ -31,9 +32,19 @@ type MultipartUploadPart struct {
 	ETag       string
 }
 
+// CacheInfo describes a cache entry stored in the backend.
+type CacheInfo struct {
+	Key       string
+	SizeBytes int64
+}
+
+// ErrCacheNotFound is returned when a cache entry doesn't exist.
+var ErrCacheNotFound = errors.New("cache entry not found")
+
 type BlobStorageBackend interface {
 	DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error)
 	UploadURL(ctx context.Context, key string, metadate map[string]string) (*URLInfo, error)
+	CacheInfo(ctx context.Context, key string, prefixes []string) (*CacheInfo, error)
 }
 
 type MultipartBlobStorageBackend interface {

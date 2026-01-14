@@ -34,7 +34,6 @@ type internalHTTPCache struct {
 
 func (httpCache *internalHTTPCache) Register(mux *http.ServeMux) error {
 	mux.HandleFunc("GET /{key...}", httpCache.downloadCache)
-	mux.HandleFunc("HEAD /{key...}", httpCache.downloadCache)
 	mux.HandleFunc("POST /{key...}", httpCache.uploadCacheEntry)
 	mux.HandleFunc("PUT /{key...}", httpCache.uploadCacheEntry)
 	return nil
