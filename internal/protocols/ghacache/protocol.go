@@ -5,37 +5,40 @@ import (
 	"net/http"
 
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
-	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
-type GHACacheProtocolFactory struct {
-	protocols.CachingProtocolFactory
-}
+type Factory struct{}
 
-func (factory *GHACacheProtocolFactory) ID() string {
+func (Factory) ID() string {
 	return "gha-cache"
 }
 
-func (factory *GHACacheProtocolFactory) NewInstance(storagBackend storage.BlobStorageBackend, httpClient *http.Client) (protocols.CachingProtocol, error) {
-	backend, ok := storagBackend.(cacheBackend)
+func (Factory) New(deps protocols.Dependencies) (protocols.Protocol, error) {
+	deps = deps.WithDefaults()
+
+	backend, ok := deps.Storage.(cacheBackend)
 	if !ok {
 		return nil, fmt.Errorf("gha-cache requires multipart storage backend with cache info support")
 	}
 
-	return &internalGHACache{
-		backend:    backend,
-		httpClient: httpClient,
+	return &protocol{
+		backend: backend,
+		http:    deps.HTTP,
 	}, nil
 }
 
-type internalGHACache struct {
-	protocols.CachingProtocol
-	backend    cacheBackend
-	httpClient *http.Client
+type protocol struct {
+	backend cacheBackend
+	http    *http.Client
 }
 
-func (cache *internalGHACache) Register(mux *http.ServeMux) error {
-	ghaCache := New("", cache.backend, cache.httpClient)
+func (p *protocol) Register(registrar *protocols.Registrar) error {
+	mux := registrar.HTTP()
+	if mux == nil {
+		return fmt.Errorf("http mux is nil")
+	}
+
+	ghaCache := New("", p.backend, p.http)
 	handler := http.StripPrefix(APIMountPoint, ghaCache)
 	mux.Handle("GET "+APIMountPoint+"/cache", handler)
 	mux.Handle("POST "+APIMountPoint+"/caches", handler)

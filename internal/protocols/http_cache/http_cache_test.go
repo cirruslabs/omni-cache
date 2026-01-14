@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cirruslabs/omni-cache/internal/testutil"
+	"github.com/cirruslabs/omni-cache/pkg/protocols/builtin"
 	"github.com/cirruslabs/omni-cache/pkg/server"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,7 @@ func TestHTTPCache(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	testServer, serverStartError := server.Start(t.Context(), listener, storage)
+	testServer, serverStartError := server.Start(t.Context(), listener, storage, builtin.Factories()...)
 	require.NoError(t, serverStartError)
 	t.Cleanup(func() {
 		testServer.Shutdown(context.Background())
