@@ -115,7 +115,37 @@ func (s *s3Storage) objectKey(key string) string {
 	return path.Join(parts...)
 }
 
-func (s *s3Storage) CacheInfo(ctx context.Context, key string) (*BlobInfo, error) {
+func (s *s3Storage) CacheInfo(ctx context.Context, key string, prefixes ...string) (*BlobInfo, error) {
+	if key != "" {
+		info, err := s.cacheInfoForKey(ctx, key)
+		if err != nil || info != nil {
+			return info, err
+		}
+	}
+
+	for _, prefix := range prefixes {
+		if prefix == "" {
+			continue
+		}
+
+		matchedKey, err := s.findLatestKeyWithPrefix(ctx, prefix)
+		if err != nil {
+			return nil, err
+		}
+		if matchedKey == "" {
+			continue
+		}
+
+		info, err := s.cacheInfoForKey(ctx, matchedKey)
+		if err != nil || info != nil {
+			return info, err
+		}
+	}
+
+	return nil, nil
+}
+
+func (s *s3Storage) cacheInfoForKey(ctx context.Context, key string) (*BlobInfo, error) {
 	objectKey := s.objectKey(key)
 	headInput := &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucketName),
@@ -130,16 +160,89 @@ func (s *s3Storage) CacheInfo(ctx context.Context, key string) (*BlobInfo, error
 		return nil, err
 	}
 
-	info := &BlobInfo{
-		ExtraHeaders: result.Metadata,
+	extraHeaders := result.Metadata
+	if extraHeaders == nil {
+		extraHeaders = make(map[string]string)
 	}
-	info.ExtraHeaders["Content-Type"] = "application/octet-stream"
+	extraHeaders["Content-Type"] = "application/octet-stream"
+
+	info := &BlobInfo{
+		Key:          key,
+		ExtraHeaders: extraHeaders,
+	}
 
 	if result.ContentLength != nil {
 		info.SizeInBytes = uint64(*result.ContentLength)
 	}
 
 	return info, nil
+}
+
+func (s *s3Storage) cacheKeyFromObjectKey(objectKey string) string {
+	objectKey = strings.TrimPrefix(objectKey, "/")
+	if len(s.prefix) == 0 {
+		return objectKey
+	}
+
+	basePrefix := strings.TrimPrefix(path.Join(s.prefix...), "/")
+	if objectKey == basePrefix {
+		return ""
+	}
+
+	basePrefix += "/"
+	if strings.HasPrefix(objectKey, basePrefix) {
+		return strings.TrimPrefix(objectKey, basePrefix)
+	}
+
+	return objectKey
+}
+
+func (s *s3Storage) findLatestKeyWithPrefix(ctx context.Context, prefix string) (string, error) {
+	objectPrefix := s.objectKey(prefix)
+	listInput := &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucketName),
+		Prefix: aws.String(objectPrefix),
+	}
+
+	var latest types.Object
+	var hasLatest bool
+
+	for {
+		result, err := s.client.ListObjectsV2(ctx, listInput)
+		if err != nil {
+			return "", err
+		}
+
+		for _, obj := range result.Contents {
+			if obj.Key == nil {
+				continue
+			}
+
+			if !hasLatest {
+				latest = obj
+				hasLatest = true
+				continue
+			}
+
+			if obj.LastModified == nil {
+				continue
+			}
+			if latest.LastModified == nil || obj.LastModified.After(*latest.LastModified) {
+				latest = obj
+			}
+		}
+
+		if !aws.ToBool(result.IsTruncated) || result.NextContinuationToken == nil {
+			break
+		}
+		listInput.ContinuationToken = result.NextContinuationToken
+	}
+
+	if !hasLatest || latest.Key == nil {
+		return "", nil
+	}
+
+	return s.cacheKeyFromObjectKey(*latest.Key), nil
 }
 
 func (s *s3Storage) DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error) {

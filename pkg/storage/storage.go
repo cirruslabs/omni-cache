@@ -12,6 +12,7 @@ type URLInfo struct {
 }
 
 type BlobInfo struct {
+	Key          string
 	SizeInBytes  uint64
 	ExtraHeaders map[string]string
 }
@@ -37,7 +38,7 @@ type MultipartUploadPart struct {
 }
 
 type BlobStorageBackend interface {
-	CacheInfo(ctx context.Context, key string) (*BlobInfo, error)
+	CacheInfo(ctx context.Context, key string, prefixes ...string) (*BlobInfo, error)
 	DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error)
 	UploadURL(ctx context.Context, key string, metadate map[string]string) (*URLInfo, error)
 	DeleteCache(ctx context.Context, key string) error

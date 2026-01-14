@@ -33,7 +33,7 @@ type HTTPCache struct {
 	httpClient    *http.Client
 	azureBlobOpts []azureblob.Option
 	proxy         *urlproxy.Proxy
-	backend       storage.MultipartBlobStorageBackend
+	backend       storage.BlobStorageBackend
 }
 
 var sem = semaphore.NewWeighted(int64(runtime.NumCPU() * activeRequestsPerLogicalCPU))
@@ -50,7 +50,7 @@ func DefaultTransport() *http.Transport {
 func Start(
 	ctx context.Context,
 	transport http.RoundTripper,
-	backend storage.MultipartBlobStorageBackend,
+	backend storage.BlobStorageBackend,
 	opts ...Option,
 ) string {
 	if backend == nil {
@@ -104,20 +104,25 @@ func Start(
 		// GitHub Actions cache API
 		sentryHandler := sentryhttp.New(sentryhttp.Options{})
 
-		mux.Handle(ghacache.APIMountPoint+"/", sentryHandler.Handle(http.StripPrefix(ghacache.APIMountPoint,
-			ghacache.New(address, httpCache.backend))))
+		multipartBackend, hasMultipartBackend := backend.(storage.MultipartBlobStorageBackend)
+		if !hasMultipartBackend {
+			slog.Warn("Multipart storage backend required for GHA cache endpoints")
+		} else {
+			mux.Handle(ghacache.APIMountPoint+"/", sentryHandler.Handle(http.StripPrefix(ghacache.APIMountPoint,
+				ghacache.New(address, multipartBackend))))
 
-		// GitHub Actions cache API v2
-		//
-		// Note that we don't strip the prefix here because
-		// Twirp handler inside *ghacachev2.Cache expects it.
-		ghaCacheV2 := ghacachev2.New(address, httpCache.backend)
-		mux.Handle(ghaCacheV2.PathPrefix(), ghaCacheV2)
+			// GitHub Actions cache API v2
+			//
+			// Note that we don't strip the prefix here because
+			// Twirp handler inside *ghacachev2.Cache expects it.
+			ghaCacheV2 := ghacachev2.New(address, httpCache.backend)
+			mux.Handle(ghaCacheV2.PathPrefix(), ghaCacheV2)
 
-		// Partial Azure Blob Service REST API implementation
-		// needed for the GHA cache API v2 to function properly
-		mux.Handle(azureblob.APIMountPoint+"/", sentryHandler.Handle(http.StripPrefix(azureblob.APIMountPoint,
-			azureblob.New(httpCache.backend, httpCache.httpClient, httpCache.azureBlobOpts...))))
+			// Partial Azure Blob Service REST API implementation
+			// needed for the GHA cache API v2 to function properly
+			mux.Handle(azureblob.APIMountPoint+"/", sentryHandler.Handle(http.StripPrefix(azureblob.APIMountPoint,
+				azureblob.New(multipartBackend, httpCache.httpClient, httpCache.azureBlobOpts...))))
+		}
 
 		httpServer := &http.Server{
 			// Use agent's context as a base for the HTTP cache handlers

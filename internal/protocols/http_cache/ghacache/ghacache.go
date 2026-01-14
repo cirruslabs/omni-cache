@@ -3,6 +3,14 @@ package ghacache
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"math"
+	"math/rand"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/ghacache/httprange"
 	"github.com/cirruslabs/omni-cache/internal/protocols/http_cache/ghacache/uploadable"
 	agentstorage "github.com/cirruslabs/omni-cache/pkg/storage"
@@ -12,13 +20,6 @@ import (
 	"github.com/samber/lo"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"log/slog"
-	"math"
-	"math/rand"
-	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
 )
 
 const (
@@ -32,12 +33,12 @@ const (
 
 type GHACache struct {
 	cacheHost   string
-	backend     agentstorage.CacheBackend
+	backend     agentstorage.MultipartBlobStorageBackend
 	mux         *http.ServeMux
 	uploadables *xsync.MapOf[int64, *uploadable.Uploadable]
 }
 
-func New(cacheHost string, backend agentstorage.CacheBackend) *GHACache {
+func New(cacheHost string, backend agentstorage.MultipartBlobStorageBackend) *GHACache {
 	cache := &GHACache{
 		cacheHost:   cacheHost,
 		backend:     backend,
@@ -66,7 +67,7 @@ func (cache *GHACache) get(writer http.ResponseWriter, request *http.Request) {
 	})
 
 	cacheKeyPrefixes := keysWithVersions[1:]
-	info, err := cache.backend.CacheInfo(request.Context(), keysWithVersions[0], cacheKeyPrefixes)
+	info, err := cache.backend.CacheInfo(request.Context(), keysWithVersions[0], cacheKeyPrefixes...)
 	if err != nil {
 		if status, ok := status.FromError(err); ok && status.Code() == codes.NotFound {
 			writer.WriteHeader(http.StatusNoContent)
@@ -76,6 +77,11 @@ func (cache *GHACache) get(writer http.ResponseWriter, request *http.Request) {
 
 		fail(writer, request, http.StatusInternalServerError, "GHA cache failed to "+
 			"retrieve information about cache entry", "key", keys[0], "err", err)
+
+		return
+	}
+	if info == nil {
+		writer.WriteHeader(http.StatusNoContent)
 
 		return
 	}

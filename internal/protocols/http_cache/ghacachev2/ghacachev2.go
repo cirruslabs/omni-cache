@@ -25,11 +25,11 @@ const APIMountPoint = "/twirp"
 
 type Cache struct {
 	cacheHost   string
-	backend     agentstorage.CacheBackend
+	backend     agentstorage.BlobStorageBackend
 	twirpServer gharesults.TwirpServer
 }
 
-func New(cacheHost string, backend agentstorage.CacheBackend) *Cache {
+func New(cacheHost string, backend agentstorage.BlobStorageBackend) *Cache {
 	if backend == nil {
 		panic("ghacachev2.New: backend is required")
 	}
@@ -55,7 +55,7 @@ func (cache *Cache) GetCacheEntryDownloadURL(ctx context.Context, request *ghare
 	cacheKeyPrefixes := lo.Map(request.RestoreKeys, func(restoreKey string, _ int) string {
 		return httpCacheKey(restoreKey, request.Version)
 	})
-	info, err := cache.backend.CacheInfo(ctx, httpCacheKey(request.Key, request.Version), cacheKeyPrefixes)
+	info, err := cache.backend.CacheInfo(ctx, httpCacheKey(request.Key, request.Version), cacheKeyPrefixes...)
 	if err != nil {
 		if status, ok := status.FromError(err); ok && status.Code() == codes.NotFound {
 			return &gharesults.GetCacheEntryDownloadURLResponse{
@@ -65,6 +65,11 @@ func (cache *Cache) GetCacheEntryDownloadURL(ctx context.Context, request *ghare
 
 		return nil, twirp.NewErrorf(twirp.Internal, "GHA cache v2 failed to retrieve information "+
 			"about cache entry with key %q and version %q: %v", request.Key, request.Version, err)
+	}
+	if info == nil {
+		return &gharesults.GetCacheEntryDownloadURLResponse{
+			Ok: false,
+		}, nil
 	}
 
 	return &gharesults.GetCacheEntryDownloadURLResponse{

@@ -204,6 +204,7 @@ func TestCacheInfoAndDeleteCache(t *testing.T) {
 	info, err = stor.CacheInfo(ctx, key)
 	require.NoError(t, err)
 	require.NotNil(t, info)
+	require.Equal(t, key, info.Key)
 	require.Equal(t, uint64(len(payload)), info.SizeInBytes)
 	require.Equal(t, "application/octet-stream", info.ExtraHeaders["Content-Type"])
 	require.Equal(t, "bar", info.ExtraHeaders["foo"])
@@ -215,6 +216,37 @@ func TestCacheInfoAndDeleteCache(t *testing.T) {
 		info, err := stor.CacheInfo(ctx, key)
 		return err == nil && info == nil
 	}, 5*time.Second, 100*time.Millisecond)
+}
+
+func TestCacheInfoWithPrefix(t *testing.T) {
+	ctx := context.Background()
+	stor := testutil.NewStorage(t)
+
+	prefix := "cache-info-prefix/" + uuid.NewString()
+	key := prefix + "/entry"
+	payload := []byte("hello prefix cache info")
+
+	urlInfo, err := stor.UploadURL(ctx, key, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPut, urlInfo.URL, bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	req.ContentLength = int64(len(payload))
+	for headerKey, headerValue := range urlInfo.ExtraHeaders {
+		req.Header.Set(headerKey, headerValue)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	info, err := stor.CacheInfo(ctx, "missing-key/"+uuid.NewString(), prefix)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.Equal(t, key, info.Key)
+	require.Equal(t, uint64(len(payload)), info.SizeInBytes)
 }
 
 func uploadPart(t *testing.T, urlInfo *storage.URLInfo, data []byte) string {
