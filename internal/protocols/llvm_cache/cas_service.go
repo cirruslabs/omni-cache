@@ -1,9 +1,7 @@
 package llvm_cache
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -12,125 +10,16 @@ import (
 	"strings"
 
 	casv1 "github.com/cirruslabs/omni-cache/internal/api/compilation_cache_service/cas/v1"
-	keyvaluev1 "github.com/cirruslabs/omni-cache/internal/api/compilation_cache_service/keyvalue/v1"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
-	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 	"github.com/zeebo/blake3"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	kvPrefix     = "llvm-cache/kv/"
 	casPrefix    = "llvm-cache/cas/"
 	casIDPrefix  = "llvmcas://"
 	casHashBytes = 32
 )
-
-type cacheStore struct {
-	backend storage.BlobStorageBackend
-	proxy   *urlproxy.Proxy
-}
-
-func newCacheStore(backend storage.BlobStorageBackend, proxy *urlproxy.Proxy) *cacheStore {
-	return &cacheStore{
-		backend: backend,
-		proxy:   proxy,
-	}
-}
-
-func (s *cacheStore) download(ctx context.Context, key string) ([]byte, error) {
-	if s.backend == nil {
-		return nil, fmt.Errorf("storage backend is nil")
-	}
-
-	if _, err := s.backend.CacheInfo(ctx, key, nil); err != nil {
-		if errors.Is(err, storage.ErrCacheNotFound) {
-			return nil, storage.ErrCacheNotFound
-		}
-		return nil, err
-	}
-
-	infos, err := s.backend.DownloadURLs(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	if len(infos) == 0 {
-		return nil, fmt.Errorf("no download URLs returned")
-	}
-
-	var lastErr error
-	for _, info := range infos {
-		var buffer bytes.Buffer
-		if err := s.proxy.DownloadToWriter(ctx, info, key, &buffer); err == nil {
-			return buffer.Bytes(), nil
-		} else {
-			lastErr = err
-		}
-	}
-
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, fmt.Errorf("download failed")
-}
-
-func (s *cacheStore) upload(ctx context.Context, key string, data []byte) error {
-	if s.backend == nil {
-		return fmt.Errorf("storage backend is nil")
-	}
-	info, err := s.backend.UploadURL(ctx, key, nil)
-	if err != nil {
-		return err
-	}
-	return s.proxy.UploadFromReader(ctx, info, key, bytes.NewReader(data), int64(len(data)))
-}
-
-type kvService struct {
-	keyvaluev1.UnimplementedKeyValueDBServer
-	store *cacheStore
-}
-
-func newKVService(store *cacheStore) *kvService {
-	return &kvService{store: store}
-}
-
-func (s *kvService) GetValue(ctx context.Context, req *keyvaluev1.GetValueRequest) (*keyvaluev1.GetValueResponse, error) {
-	data, err := s.store.download(ctx, kvStorageKey(req.GetKey()))
-	if err != nil {
-		if errors.Is(err, storage.ErrCacheNotFound) {
-			return &keyvaluev1.GetValueResponse{Outcome: keyvaluev1.GetValueResponse_KEY_NOT_FOUND}, nil
-		}
-		return kvGetValueError(err), nil
-	}
-
-	var value keyvaluev1.Value
-	if err := proto.Unmarshal(data, &value); err != nil {
-		return kvGetValueError(err), nil
-	}
-
-	return &keyvaluev1.GetValueResponse{
-		Outcome:  keyvaluev1.GetValueResponse_SUCCESS,
-		Contents: &keyvaluev1.GetValueResponse_Value{Value: &value},
-	}, nil
-}
-
-func (s *kvService) PutValue(ctx context.Context, req *keyvaluev1.PutValueRequest) (*keyvaluev1.PutValueResponse, error) {
-	value := req.GetValue()
-	if value == nil {
-		value = &keyvaluev1.Value{}
-	}
-
-	data, err := proto.Marshal(value)
-	if err != nil {
-		return kvPutValueError(err), nil
-	}
-
-	if err := s.store.upload(ctx, kvStorageKey(req.GetKey()), data); err != nil {
-		return kvPutValueError(err), nil
-	}
-
-	return &keyvaluev1.PutValueResponse{}, nil
-}
 
 type casService struct {
 	casv1.UnimplementedCASDBServiceServer
@@ -297,10 +186,6 @@ func (s *casService) loadCASObject(ctx context.Context, digestHex string) (*casv
 	return &obj, nil
 }
 
-func kvStorageKey(key []byte) string {
-	return kvPrefix + base64.RawURLEncoding.EncodeToString(key)
-}
-
 func casStorageKey(digestHex string) string {
 	return casPrefix + digestHex
 }
@@ -430,17 +315,6 @@ func writeTempBlob(data []byte) (string, error) {
 		return "", err
 	}
 	return name, nil
-}
-
-func kvGetValueError(err error) *keyvaluev1.GetValueResponse {
-	return &keyvaluev1.GetValueResponse{
-		Outcome:  keyvaluev1.GetValueResponse_ERROR,
-		Contents: &keyvaluev1.GetValueResponse_Error{Error: &keyvaluev1.ResponseError{Description: err.Error()}},
-	}
-}
-
-func kvPutValueError(err error) *keyvaluev1.PutValueResponse {
-	return &keyvaluev1.PutValueResponse{Error: &keyvaluev1.ResponseError{Description: err.Error()}}
 }
 
 func casGetError(err error) *casv1.CASGetResponse {
