@@ -27,6 +27,7 @@ func (s *cacheStore) download(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("storage backend is nil")
 	}
 
+	// Pre-flight CacheInfo to surface ErrCacheNotFound consistently across backends.
 	if _, err := s.backend.CacheInfo(ctx, key, nil); err != nil {
 		if errors.Is(err, storage.ErrCacheNotFound) {
 			return nil, storage.ErrCacheNotFound

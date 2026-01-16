@@ -195,6 +195,7 @@ func parseCASID(raw []byte) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("empty CAS id")
 	}
 
+	// LLVM clients can send raw digest bytes or llvmcas://<hex>; normalize to the prefixed hex form.
 	if len(raw) == casHashBytes {
 		id := casIDFromDigest(raw)
 		return append([]byte(nil), raw...), id, nil
@@ -227,6 +228,7 @@ func normalizeRefs(refs []*casv1.CASDataID) ([][]byte, []*casv1.CASDataID, error
 		return nil, nil, nil
 	}
 
+	// Normalize all references to llvmcas://<hex> to match LLVM's canonical form.
 	digests := make([][]byte, 0, len(refs))
 	normalized := make([]*casv1.CASDataID, 0, len(refs))
 	for _, ref := range refs {
@@ -251,6 +253,7 @@ func hashObject(refDigests [][]byte, data []byte) ([casHashBytes]byte, error) {
 		}
 	}
 
+	// Match LLVM's CAS hashing: BLAKE3 over ref count, refs, data length, then data (all little-endian).
 	hasher := blake3.New()
 	var sizeBuf [8]byte
 	binary.LittleEndian.PutUint64(sizeBuf[:], uint64(len(refDigests)))
@@ -275,6 +278,7 @@ func casBlobData(blob *casv1.CASBytes) ([]byte, error) {
 		return nil, fmt.Errorf("missing CAS blob")
 	}
 
+	// Clients can send inline bytes or a file path; support both.
 	switch value := blob.GetContents().(type) {
 	case *casv1.CASBytes_Data:
 		return value.Data, nil
@@ -293,6 +297,7 @@ func casBytesForResponse(data []byte, writeToDisk bool) (*casv1.CASBytes, error)
 		return &casv1.CASBytes{Contents: &casv1.CASBytes_Data{Data: data}}, nil
 	}
 
+	// When requested, write the blob to a temp file so the client can move it.
 	path, err := writeTempBlob(data)
 	if err != nil {
 		return nil, err
