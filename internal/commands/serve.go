@@ -1,0 +1,219 @@
+package commands
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/cirruslabs/omni-cache/pkg/protocols/builtin"
+	"github.com/cirruslabs/omni-cache/pkg/server"
+	"github.com/cirruslabs/omni-cache/pkg/storage"
+	"github.com/spf13/cobra"
+)
+
+const (
+	defaultListenAddr = "localhost:12321"
+	defaultPort       = "12321"
+
+	cacheHostEnv  = "CIRRUS_HTTP_CACHE_HOST"
+	bucketEnv     = "OMNI_CACHE_BUCKET"
+	bucketEnvAlt  = "CIRRUS_HTTP_CACHE_BUCKET"
+	prefixEnv     = "OMNI_CACHE_PREFIX"
+	prefixEnvAlt  = "CIRRUS_HTTP_CACHE_PREFIX"
+	socketDirName = ".cirruslabs"
+	socketName    = "omni-cache.sock"
+
+	shutdownTimeout = 10 * time.Second
+)
+
+type serveOptions struct {
+	bucketName string
+	prefix     string
+}
+
+func newServeCmd() *cobra.Command {
+	opts := &serveOptions{
+		bucketName: envOrFirst(bucketEnv, bucketEnvAlt),
+		prefix:     envOrFirst(prefixEnv, prefixEnvAlt),
+	}
+
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the cache daemon",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// https://github.com/spf13/cobra/issues/340#issuecomment-374617413
+			cmd.SilenceUsage = true
+
+			return runServe(cmd.Context(), opts)
+		},
+	}
+
+	cmd.Flags().StringVar(&opts.bucketName, "bucket", opts.bucketName, "S3 bucket name")
+	cmd.Flags().StringVar(&opts.prefix, "prefix", opts.prefix, "S3 object key prefix")
+
+	return cmd
+}
+
+func runServe(ctx context.Context, opts *serveOptions) error {
+	if opts == nil {
+		return fmt.Errorf("serve options are nil")
+	}
+
+	bucketName := strings.TrimSpace(opts.bucketName)
+	if bucketName == "" {
+		return fmt.Errorf("missing required bucket: set --bucket or %s", bucketEnv)
+	}
+	prefixValue := strings.TrimSpace(opts.prefix)
+
+	listenAddr, err := resolveListenAddr()
+	if err != nil {
+		return err
+	}
+
+	backend, err := newS3Backend(ctx, bucketName, prefixValue)
+	if err != nil {
+		return err
+	}
+
+	listeners := make([]net.Listener, 0, 2)
+	tcpListener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", listenAddr, err)
+	}
+	defer func() {
+		_ = tcpListener.Close()
+	}()
+	listeners = append(listeners, tcpListener)
+
+	var socketPath string
+	if runtime.GOOS != "windows" {
+		unixListener, path, cleanup, err := listenUnixSocket()
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		defer func() {
+			_ = unixListener.Close()
+		}()
+		socketPath = path
+		listeners = append(listeners, unixListener)
+	} else {
+		slog.Info("skipping unix socket on windows")
+	}
+
+	factories := builtin.Factories()
+	srv, err := server.Start(ctx, listeners, backend, factories...)
+	if err != nil {
+		return err
+	}
+
+	if socketPath != "" {
+		slog.InfoContext(ctx, "omni-cache started", "addr", listenAddr, "socket", socketPath, "bucket", bucketName)
+	} else {
+		slog.InfoContext(ctx, "omni-cache started", "addr", listenAddr, "bucket", bucketName)
+	}
+
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
+	}
+	slog.Info("omni-cache stopped")
+	return nil
+}
+
+func resolveListenAddr() (string, error) {
+	addr := strings.TrimSpace(os.Getenv(cacheHostEnv))
+	if addr == "" {
+		return defaultListenAddr, nil
+	}
+
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		parsed, err := url.Parse(addr)
+		if err != nil || parsed.Host == "" {
+			return "", fmt.Errorf("%s must be host:port, got %q", cacheHostEnv, addr)
+		}
+		addr = parsed.Host
+	}
+
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		var addrErr *net.AddrError
+		if errors.As(err, &addrErr) && strings.Contains(addrErr.Err, "missing port in address") {
+			addr = net.JoinHostPort(addr, defaultPort)
+		} else {
+			return "", fmt.Errorf("%s must be host:port, got %q", cacheHostEnv, addr)
+		}
+	}
+
+	return addr, nil
+}
+
+func newS3Backend(ctx context.Context, bucketName, prefix string) (storage.MultipartBlobStorageBackend, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+
+	client := s3.NewFromConfig(cfg)
+	if prefix == "" {
+		return storage.NewS3Storage(ctx, client, bucketName)
+	}
+	return storage.NewS3Storage(ctx, client, bucketName, prefix)
+}
+
+func listenUnixSocket() (net.Listener, string, func(), error) {
+	socketPath, err := socketPath()
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
+		return nil, "", nil, fmt.Errorf("create socket dir: %w", err)
+	}
+	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, "", nil, fmt.Errorf("remove stale socket: %w", err)
+	}
+
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("listen on unix socket: %w", err)
+	}
+
+	cleanup := func() {
+		_ = os.Remove(socketPath)
+	}
+
+	return listener, socketPath, cleanup, nil
+}
+
+func socketPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+
+	return filepath.Join(homeDir, socketDirName, socketName), nil
+}
+
+func envOrFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
