@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	casv1 "github.com/cirruslabs/omni-cache/internal/api/compilation_cache_service/cas/v1"
 	keyvaluev1 "github.com/cirruslabs/omni-cache/internal/api/compilation_cache_service/keyvalue/v1"
+	"github.com/cirruslabs/omni-cache/internal/testutil"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 	"github.com/google/uuid"
@@ -40,12 +41,7 @@ func TestTartBuildUsesRemoteCache(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")
 	}
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("docker is not available")
-	}
-	if !dockerAvailable(t) {
-		t.Skip("docker is not running")
-	}
+	testutil.RequireDocker(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Minute)
 	t.Cleanup(cancel)
@@ -164,14 +160,6 @@ func newLocalstackS3Client(t *testing.T, ctx context.Context, endpoint string) *
 		options.BaseEndpoint = aws.String(endpoint)
 		options.UsePathStyle = true
 	})
-}
-
-func dockerAvailable(t *testing.T) bool {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "docker", "info", "--format", "{{.ServerVersion}}")
-	return cmd.Run() == nil
 }
 
 func waitForUnixSocket(ctx context.Context, socketPath string) error {
