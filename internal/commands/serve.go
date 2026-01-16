@@ -113,7 +113,8 @@ func runServe(ctx context.Context, opts *serveOptions) error {
 	}
 
 	factories := builtin.Factories()
-	srv, err := server.Start(ctx, listeners, backend, factories...)
+	serverCtx := context.WithoutCancel(ctx)
+	srv, err := server.Start(serverCtx, listeners, backend, factories...)
 	if err != nil {
 		return err
 	}
