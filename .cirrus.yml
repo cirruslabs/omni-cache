@@ -8,7 +8,7 @@ docker_builder:
   env:
     HOME: /root
 
-macos_tests:
+macos_task:
   name: Test (macOS without Docker)
   macos_instance:
     image: ghcr.io/cirruslabs/macos-runner:tahoe
