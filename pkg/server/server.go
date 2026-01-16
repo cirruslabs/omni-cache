@@ -16,13 +16,23 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
 	activeRequestsPerLogicalCPU = 4
 )
 
-func Start(ctx context.Context, listener net.Listener, backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.Server, error) {
+func Start(ctx context.Context, listeners []net.Listener, backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.Server, error) {
+	if len(listeners) == 0 {
+		return nil, fmt.Errorf("no listeners provided")
+	}
+	for i, listener := range listeners {
+		if listener == nil {
+			return nil, fmt.Errorf("listener at index %d is nil", i)
+		}
+	}
 	if len(factories) == 0 {
 		return nil, fmt.Errorf("no protocols provided")
 	}
@@ -48,11 +58,14 @@ func Start(ctx context.Context, listener net.Listener, backend storage.BlobStora
 		grpcServer.GracefulStop()
 	})
 
-	go func() {
-		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.ErrorContext(ctx, "server exited with error", "err", err)
-		}
-	}()
+	for _, listener := range listeners {
+		listener := listener
+		go func() {
+			if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.ErrorContext(ctx, "server exited with error", "err", err, "addr", listener.Addr().String())
+			}
+		}()
+	}
 	return httpServer, nil
 }
 
@@ -85,6 +98,9 @@ func createMuxAndGRPCServer(backend storage.BlobStorageBackend, factories ...pro
 
 	mux := http.NewServeMux()
 	grpcServer := grpc.NewServer()
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
 	registrar := protocols.NewRegistrar(mux, grpcServer)
 
 	seenIDs := map[string]struct{}{}

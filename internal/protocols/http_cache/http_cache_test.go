@@ -19,7 +19,7 @@ func TestHTTPCache(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	testServer, serverStartError := server.Start(t.Context(), listener, storage, builtin.Factories()...)
+	testServer, serverStartError := server.Start(t.Context(), []net.Listener{listener}, storage, builtin.Factories()...)
 	require.NoError(t, serverStartError)
 	t.Cleanup(func() {
 		testServer.Shutdown(context.Background())

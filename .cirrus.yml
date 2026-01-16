@@ -7,3 +7,10 @@ docker_builder:
     - go test ./...
   env:
     HOME: /root
+
+macos_task:
+  name: Test (macOS without Docker)
+  macos_instance:
+    image: ghcr.io/cirruslabs/macos-runner:tahoe
+  install_script: brew install go
+  test_script: go test ./...

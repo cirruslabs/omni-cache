@@ -32,6 +32,8 @@ func NewMultipartStorage(t *testing.T) storage.MultipartBlobStorageBackend {
 func S3Client(t *testing.T) *s3.Client {
 	t.Helper()
 
+	RequireDocker(t)
+
 	ctx := context.Background()
 
 	localstackContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{

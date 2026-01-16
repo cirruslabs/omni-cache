@@ -170,3 +170,108 @@ func (p *Proxy) proxyGRPCUpload(ctx context.Context, w http.ResponseWriter, info
 	w.WriteHeader(http.StatusCreated)
 	return true
 }
+
+// UploadFromReader streams the provided reader to the upload URL.
+func (p *Proxy) UploadFromReader(ctx context.Context, info *storage.URLInfo, resourceName string, body io.Reader, contentLength int64) error {
+	if body == nil {
+		return fmt.Errorf("upload body is nil")
+	}
+
+	scheme := info.Scheme()
+	switch {
+	case scheme == "" || isHTTPScheme(scheme):
+		return p.uploadHTTPFromReader(ctx, info, body, contentLength)
+	case isGRPCScheme(scheme):
+		return p.uploadGRPCFromReader(ctx, info, resourceName, body)
+	default:
+		return fmt.Errorf("unsupported upload URL scheme %q", scheme)
+	}
+}
+
+func (p *Proxy) uploadHTTPFromReader(ctx context.Context, info *storage.URLInfo, body io.Reader, contentLength int64) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, info.URL, bufio.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	if contentLength >= 0 {
+		req.ContentLength = contentLength
+	}
+	for k, v := range info.ExtraHeaders {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("upload returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func (p *Proxy) uploadGRPCFromReader(ctx context.Context, info *storage.URLInfo, resourceName string, body io.Reader) error {
+	if resourceName == "" {
+		return fmt.Errorf("bytestream upload requires non-empty resource name")
+	}
+
+	client, closer, err := newByteStreamClientFromURL(ctx, info, p.grpcDialOptions...)
+	if err != nil {
+		return err
+	}
+	defer closer.Close()
+
+	stream, err := client.Write(ctx)
+	if err != nil {
+		return err
+	}
+
+	reader := bufio.NewReader(body)
+	buffer := make([]byte, 64*1024)
+
+	var written int64
+	for {
+		n, readErr := reader.Read(buffer)
+
+		if n > 0 {
+			if err := stream.Send(&bytestream.WriteRequest{
+				ResourceName: resourceName,
+				WriteOffset:  written,
+				Data:         buffer[:n],
+			}); err != nil {
+				return err
+			}
+			written += int64(n)
+		}
+
+		if readErr != nil {
+			if readErr != io.EOF {
+				return readErr
+			}
+			break
+		}
+	}
+
+	if err := stream.Send(&bytestream.WriteRequest{
+		ResourceName: resourceName,
+		WriteOffset:  written,
+		FinishWrite:  true,
+	}); err != nil {
+		return err
+	}
+
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+
+	if resp.GetCommittedSize() != 0 && resp.GetCommittedSize() != written {
+		return fmt.Errorf("bytestream committed size differs from bytes sent")
+	}
+
+	return nil
+}
