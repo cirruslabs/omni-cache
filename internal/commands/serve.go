@@ -86,6 +86,17 @@ func runServe(ctx context.Context, opts *serveOptions) error {
 		return err
 	}
 
+	return runServer(ctx, listenAddr, bucketName, backend)
+}
+
+func runServer(ctx context.Context, listenAddr, bucketName string, backend storage.MultipartBlobStorageBackend) error {
+	if strings.TrimSpace(listenAddr) == "" {
+		return fmt.Errorf("listen address is empty")
+	}
+	if backend == nil {
+		return fmt.Errorf("storage backend is nil")
+	}
+
 	listeners := make([]net.Listener, 0, 2)
 	tcpListener, err := net.Listen("tcp", listenAddr)
 	if err != nil {

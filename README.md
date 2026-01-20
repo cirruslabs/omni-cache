@@ -9,3 +9,11 @@ Note: project is very WIP but it extracts logic from caching used in [Cirrus Run
 Omni-cache is built around pluggable caching protocols. Each protocol provides a `protocols.Factory` and registers its HTTP and/or gRPC handlers via `protocols.Registrar`.
 
 Built-in protocol factories live in `pkg/protocols/builtin` (`builtin.Factories()`).
+
+## Development
+
+Run omni-cache with a LocalStack S3 backend (Docker required):
+
+```sh
+go run ./cmd/omni-cache dev
+```

@@ -1,4 +1,4 @@
-package llvm_cache
+package llvm_cache_test
 
 import (
 	"context"
@@ -11,11 +11,17 @@ import (
 
 	casv1 "github.com/cirruslabs/omni-cache/internal/api/compilation_cache_service/cas/v1"
 	keyvaluev1 "github.com/cirruslabs/omni-cache/internal/api/compilation_cache_service/keyvalue/v1"
+	llvmcache "github.com/cirruslabs/omni-cache/internal/protocols/llvm_cache"
 	"github.com/cirruslabs/omni-cache/internal/testutil"
 	"github.com/cirruslabs/omni-cache/pkg/server"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+)
+
+const (
+	casIDPrefix  = "llvmcas://"
+	casHashBytes = 32
 )
 
 func setupGRPCConn(t *testing.T) *grpc.ClientConn {
@@ -25,7 +31,7 @@ func setupGRPCConn(t *testing.T) *grpc.ClientConn {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	srv, err := server.Start(t.Context(), []net.Listener{listener}, storage, Factory{})
+	srv, err := server.Start(t.Context(), []net.Listener{listener}, storage, llvmcache.Factory{})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = srv.Shutdown(context.Background())
