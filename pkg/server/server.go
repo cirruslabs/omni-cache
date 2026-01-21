@@ -50,12 +50,14 @@ func StartDefault(ctx context.Context, backend storage.BlobStorageBackend, facto
 	listeners := []net.Listener{tcpListener}
 
 	socketPath, err := defaultSocketPath()
-	socketCleanup := func() {
-		if socketPath != "" {
-			_ = os.Remove(socketPath)
-		}
+	if err != nil {
+		_ = tcpListener.Close()
+		return nil, err
 	}
-	if runtime.GOOS != "windows" && err != nil {
+	socketCleanup := func() {
+		_ = os.Remove(socketPath)
+	}
+	if runtime.GOOS != "windows" {
 		unixListener, err := listenUnixSocket(socketPath)
 		if err != nil {
 			_ = tcpListener.Close()
