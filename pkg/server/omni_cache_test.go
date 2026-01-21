@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -17,27 +16,18 @@ func TestStartDefault(t *testing.T) {
 	homeDir := shortTempDir(t)
 	t.Setenv("HOME", homeDir)
 
-	srv, cleanup, err := server.StartDefault(context.Background(), nil, testFactory{})
+	srv, err := server.StartDefault(context.Background(), nil, testFactory{})
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 	require.NotEmpty(t, srv.Addr)
 
-	if cleanup != nil {
-		t.Cleanup(func() {
-			require.NoError(t, cleanup.Close())
-		})
-	}
 	t.Cleanup(func() {
 		require.NoError(t, srv.Shutdown(context.Background()))
 	})
 
-	if runtime.GOOS == "windows" {
-		require.Nil(t, cleanup)
-	} else {
-		expectedSocketPath := filepath.Join(homeDir, ".cirruslabs", "omni-cache.sock")
-		_, err := os.Stat(expectedSocketPath)
-		require.NoError(t, err)
-	}
+	expectedSocketPath := filepath.Join(homeDir, ".cirruslabs", "omni-cache.sock")
+	_, err = os.Stat(expectedSocketPath)
+	require.NoError(t, err)
 
 	httpClient := &http.Client{
 		Timeout: 2 * time.Second,
