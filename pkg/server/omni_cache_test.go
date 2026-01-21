@@ -13,25 +13,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOmniCacheNew(t *testing.T) {
+func TestStartDefault(t *testing.T) {
 	homeDir := shortTempDir(t)
 	t.Setenv("HOME", homeDir)
 
-	cache, err := server.New(context.Background(), nil, server.WithFactories(testFactory{}))
+	srv, cleanup, err := server.StartDefault(context.Background(), nil, testFactory{})
 	require.NoError(t, err)
-	require.NotNil(t, cache)
-	require.NotEmpty(t, cache.Addr)
+	require.NotNil(t, srv)
+	require.NotEmpty(t, srv.Addr)
 
+	if cleanup != nil {
+		t.Cleanup(func() {
+			require.NoError(t, cleanup.Close())
+		})
+	}
 	t.Cleanup(func() {
-		require.NoError(t, cache.Close())
+		require.NoError(t, srv.Shutdown(context.Background()))
 	})
 
 	if runtime.GOOS == "windows" {
-		require.Empty(t, cache.SocketPath)
+		require.Nil(t, cleanup)
 	} else {
 		expectedSocketPath := filepath.Join(homeDir, ".cirruslabs", "omni-cache.sock")
-		require.Equal(t, expectedSocketPath, cache.SocketPath)
-		_, err := os.Stat(cache.SocketPath)
+		_, err := os.Stat(expectedSocketPath)
 		require.NoError(t, err)
 	}
 
@@ -43,7 +47,7 @@ func TestOmniCacheNew(t *testing.T) {
 	})
 
 	require.Eventually(t, func() bool {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+cache.Addr+"/ping", nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+srv.Addr+"/ping", nil)
 		if err != nil {
 			return false
 		}

@@ -7,11 +7,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
+	"github.com/cirruslabs/omni-cache/pkg/protocols/builtin"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -22,7 +25,60 @@ import (
 
 const (
 	activeRequestsPerLogicalCPU = 4
+
+	defaultTCPListenAddr  = "127.0.0.1:12321"
+	fallbackTCPListenAddr = "127.0.0.1:0"
+
+	defaultSocketDirName = ".cirruslabs"
+	defaultSocketName    = "omni-cache.sock"
 )
+
+func StartDefault(ctx context.Context, backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.Server, error) {
+	if len(factories) == 0 {
+		factories = builtin.Factories()
+	}
+
+	tcpListener, err := net.Listen("tcp", defaultTCPListenAddr)
+	if err != nil {
+		slog.Warn("Port 12321 is occupied, looking for another one", "err", err)
+		tcpListener, err = net.Listen("tcp", fallbackTCPListenAddr)
+		if err != nil {
+			return nil, fmt.Errorf("listen on tcp: %w", err)
+		}
+	}
+
+	listeners := []net.Listener{tcpListener}
+
+	socketPath, err := defaultSocketPath()
+	socketCleanup := func() {
+		if socketPath != "" {
+			_ = os.Remove(socketPath)
+		}
+	}
+	if runtime.GOOS != "windows" && err != nil {
+		unixListener, err := listenUnixSocket(socketPath)
+		if err != nil {
+			_ = tcpListener.Close()
+			return nil, err
+		}
+		listeners = append(listeners, unixListener)
+	} else {
+		slog.Info("skipping unix socket creation")
+	}
+
+	srv, err := Start(ctx, listeners, backend, factories...)
+	if err != nil {
+		for _, listener := range listeners {
+			_ = listener.Close()
+		}
+		return nil, err
+	}
+
+	srv.Addr = tcpListener.Addr().String()
+	srv.RegisterOnShutdown(socketCleanup)
+
+	return srv, nil
+}
 
 func Start(ctx context.Context, listeners []net.Listener, backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.Server, error) {
 	if len(listeners) == 0 {
@@ -124,4 +180,33 @@ func createMuxAndGRPCServer(backend storage.BlobStorageBackend, factories ...pro
 	}
 
 	return mux, grpcServer, nil
+}
+
+func listenUnixSocket(socketPath string) (net.Listener, error) {
+	if strings.TrimSpace(socketPath) == "" {
+		return nil, fmt.Errorf("unix socket path is empty")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
+		return nil, fmt.Errorf("create socket dir: %w", err)
+	}
+	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("remove stale socket: %w", err)
+	}
+
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("listen on unix socket: %w", err)
+	}
+
+	return listener, nil
+}
+
+func defaultSocketPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+
+	return filepath.Join(homeDir, defaultSocketDirName, defaultSocketName), nil
 }
