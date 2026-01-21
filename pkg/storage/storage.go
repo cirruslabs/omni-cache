@@ -36,6 +36,7 @@ type MultipartUploadPart struct {
 type CacheInfo struct {
 	Key       string
 	SizeBytes int64
+	Metadata  map[string]string
 }
 
 // ErrCacheNotFound is returned when a cache entry doesn't exist.
