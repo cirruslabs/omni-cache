@@ -300,10 +300,7 @@ func (s *s3Storage) cacheInfoForKey(ctx context.Context, key string) (*CacheInfo
 		return nil, err
 	}
 
-	return &CacheInfo{
-		Key:       key,
-		SizeBytes: aws.ToInt64(headOutput.ContentLength),
-	}, nil
+	return cacheInfoFromHeadOutput(key, headOutput), nil
 }
 
 func (s *s3Storage) cacheInfoForPrefix(ctx context.Context, prefix string) (*CacheInfo, error) {
@@ -315,7 +312,6 @@ func (s *s3Storage) cacheInfoForPrefix(ctx context.Context, prefix string) (*Cac
 
 	var (
 		latestKey  string
-		latestSize int64
 		latestTime time.Time
 		found      bool
 	)
@@ -334,7 +330,6 @@ func (s *s3Storage) cacheInfoForPrefix(ctx context.Context, prefix string) (*Cac
 			objectTime := *object.LastModified
 			if !found || objectTime.After(latestTime) {
 				latestKey = aws.ToString(object.Key)
-				latestSize = aws.ToInt64(object.Size)
 				latestTime = objectTime
 				found = true
 			}
@@ -345,10 +340,26 @@ func (s *s3Storage) cacheInfoForPrefix(ctx context.Context, prefix string) (*Cac
 		return nil, ErrCacheNotFound
 	}
 
+	headOutput, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(latestKey),
+	})
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, ErrCacheNotFound
+		}
+		return nil, err
+	}
+
+	return cacheInfoFromHeadOutput(s.trimObjectKey(latestKey), headOutput), nil
+}
+
+func cacheInfoFromHeadOutput(key string, headOutput *s3.HeadObjectOutput) *CacheInfo {
 	return &CacheInfo{
-		Key:       s.trimObjectKey(latestKey),
-		SizeBytes: latestSize,
-	}, nil
+		Key:       key,
+		SizeBytes: aws.ToInt64(headOutput.ContentLength),
+		Metadata:  headOutput.Metadata,
+	}
 }
 
 func isNotFoundError(err error) bool {

@@ -172,8 +172,11 @@ func TestCacheInfoExactMatch(t *testing.T) {
 
 	key := "cache-info-exact/" + uuid.NewString()
 	payload := []byte("hello cache")
+	metadata := map[string]string{
+		"custom-key": "custom-value",
+	}
 
-	uploadURL, err := stor.UploadURL(ctx, key, nil)
+	uploadURL, err := stor.UploadURL(ctx, key, metadata)
 	require.NoError(t, err)
 
 	uploadObject(t, uploadURL, payload)
@@ -182,6 +185,7 @@ func TestCacheInfoExactMatch(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, key, info.Key)
 	require.EqualValues(t, len(payload), info.SizeBytes)
+	require.Equal(t, metadata, info.Metadata)
 }
 
 func TestCacheInfoPrefixMatch(t *testing.T) {
@@ -191,8 +195,11 @@ func TestCacheInfoPrefixMatch(t *testing.T) {
 	prefix := "cache-info-prefix-" + uuid.NewString() + "-"
 	key := prefix + "candidate"
 	payload := []byte("prefix match")
+	metadata := map[string]string{
+		"prefix-key": "prefix-value",
+	}
 
-	uploadURL, err := stor.UploadURL(ctx, key, nil)
+	uploadURL, err := stor.UploadURL(ctx, key, metadata)
 	require.NoError(t, err)
 
 	uploadObject(t, uploadURL, payload)
@@ -200,6 +207,7 @@ func TestCacheInfoPrefixMatch(t *testing.T) {
 	info, err := stor.CacheInfo(ctx, "missing-key", []string{prefix})
 	require.NoError(t, err)
 	require.Equal(t, key, info.Key)
+	require.Equal(t, metadata, info.Metadata)
 }
 
 func uploadPart(t *testing.T, urlInfo *storage.URLInfo, data []byte) string {
