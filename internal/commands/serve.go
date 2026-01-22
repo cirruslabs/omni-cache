@@ -25,13 +25,11 @@ const (
 	defaultListenAddr = "localhost:12321"
 	defaultPort       = "12321"
 
-	cacheHostEnv  = "CIRRUS_HTTP_CACHE_HOST"
-	bucketEnv     = "OMNI_CACHE_BUCKET"
-	bucketEnvAlt  = "CIRRUS_HTTP_CACHE_BUCKET"
-	prefixEnv     = "OMNI_CACHE_PREFIX"
-	prefixEnvAlt  = "CIRRUS_HTTP_CACHE_PREFIX"
-	socketDirName = ".cirruslabs"
-	socketName    = "omni-cache.sock"
+	cacheHostEnv = "CIRRUS_HTTP_CACHE_HOST"
+	bucketEnv    = "OMNI_CACHE_BUCKET"
+	bucketEnvAlt = "CIRRUS_HTTP_CACHE_BUCKET"
+	prefixEnv    = "OMNI_CACHE_PREFIX"
+	prefixEnvAlt = "CIRRUS_HTTP_CACHE_PREFIX"
 
 	shutdownTimeout = 10 * time.Second
 )
@@ -188,7 +186,7 @@ func newS3Backend(ctx context.Context, bucketName, prefix string) (storage.Multi
 }
 
 func listenUnixSocket() (net.Listener, string, func(), error) {
-	socketPath, err := socketPath()
+	socketPath, err := server.DefaultSocketPath()
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -210,15 +208,6 @@ func listenUnixSocket() (net.Listener, string, func(), error) {
 	}
 
 	return listener, socketPath, cleanup, nil
-}
-
-func socketPath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
-	}
-
-	return filepath.Join(homeDir, socketDirName, socketName), nil
 }
 
 func envOrFirst(keys ...string) string {

@@ -49,7 +49,7 @@ func StartDefault(ctx context.Context, backend storage.BlobStorageBackend, facto
 
 	listeners := []net.Listener{tcpListener}
 
-	socketPath, err := defaultSocketPath()
+	socketPath, err := DefaultSocketPath()
 	if err != nil {
 		_ = tcpListener.Close()
 		return nil, err
@@ -204,11 +204,17 @@ func listenUnixSocket(socketPath string) (net.Listener, error) {
 	return listener, nil
 }
 
-func defaultSocketPath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
+// DefaultSocketPath returns the default unix socket path for omni-cache.
+func DefaultSocketPath() (string, error) {
+	homeDir := strings.TrimSpace(os.Getenv("HOME"))
+	if homeDir != "" {
+		return filepath.Join(homeDir, defaultSocketDirName, defaultSocketName), nil
 	}
 
-	return filepath.Join(homeDir, defaultSocketDirName, defaultSocketName), nil
+	tempDir := strings.TrimSpace(os.TempDir())
+	if tempDir == "" {
+		return "", fmt.Errorf("resolve temp dir: empty")
+	}
+
+	return filepath.Join(tempDir, defaultSocketDirName, defaultSocketName), nil
 }
