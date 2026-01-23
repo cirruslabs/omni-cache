@@ -3,7 +3,7 @@ package simplerange_test
 import (
 	"testing"
 
-	"github.com/cirruslabs/cirrus-cli/internal/agent/http_cache/azureblob/simplerange"
+	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob/simplerange"
 	"github.com/stretchr/testify/require"
 )
 

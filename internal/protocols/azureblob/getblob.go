@@ -5,14 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/cirruslabs/cirrus-cli/internal/agent/http_cache/azureblob/simplerange"
-	"github.com/cirruslabs/cirrus-cli/internal/agent/http_cache/azureblob/unexpectedeofreader"
-	"github.com/cirruslabs/cirrus-cli/internal/agent/progressreader"
+	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob/progressreader"
+	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob/simplerange"
+	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob/unexpectedeofreader"
 	"github.com/dustin/go-humanize"
-	"log/slog"
 )
 
 const PROXY_DOWNLOAD_BUFFER_SIZE = 1024 * 1024

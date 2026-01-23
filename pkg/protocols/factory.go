@@ -12,6 +12,7 @@ type Dependencies struct {
 	Storage  storage.BlobStorageBackend
 	HTTP     *http.Client
 	URLProxy *urlproxy.Proxy
+	Host     string
 }
 
 func (deps Dependencies) WithDefaults() Dependencies {

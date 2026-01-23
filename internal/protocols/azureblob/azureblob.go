@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	uploadablepkg "github.com/cirruslabs/cirrus-cli/internal/agent/http_cache/azureblob/uploadable"
+	uploadablepkg "github.com/cirruslabs/omni-cache/internal/protocols/azureblob/uploadable"
 	omnistorage "github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/render"

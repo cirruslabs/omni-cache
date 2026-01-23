@@ -95,7 +95,8 @@ func Start(ctx context.Context, listeners []net.Listener, backend storage.BlobSt
 		return nil, fmt.Errorf("no protocols provided")
 	}
 
-	mux, grpcServer, err := createMuxAndGRPCServer(backend, factories...)
+	host := selectHost(listeners)
+	mux, grpcServer, err := createMuxAndGRPCServer(host, backend, factories...)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +139,7 @@ func grpcOrHTTPHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.H
 	})
 }
 
-func createMuxAndGRPCServer(backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.ServeMux, *grpc.Server, error) {
+func createMuxAndGRPCServer(host string, backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.ServeMux, *grpc.Server, error) {
 	maxConcurrentConnections := runtime.NumCPU() * activeRequestsPerLogicalCPU
 
 	httpClient := &http.Client{
@@ -152,6 +153,7 @@ func createMuxAndGRPCServer(backend storage.BlobStorageBackend, factories ...pro
 	deps := protocols.Dependencies{
 		Storage: backend,
 		HTTP:    httpClient,
+		Host:    host,
 	}.WithDefaults()
 
 	mux := http.NewServeMux()
@@ -182,6 +184,21 @@ func createMuxAndGRPCServer(backend storage.BlobStorageBackend, factories ...pro
 	}
 
 	return mux, grpcServer, nil
+}
+
+func selectHost(listeners []net.Listener) string {
+	for _, listener := range listeners {
+		if listener == nil {
+			continue
+		}
+		network := listener.Addr().Network()
+		if strings.HasPrefix(network, "unix") {
+			continue
+		}
+		return listener.Addr().String()
+	}
+
+	return ""
 }
 
 func listenUnixSocket(socketPath string) (net.Listener, error) {

@@ -5,32 +5,22 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"io"
+	"net"
 	"net/http"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/cirruslabs/cirrus-cli/internal/agent/http_cache"
-	"github.com/cirruslabs/cirrus-cli/internal/agent/http_cache/azureblob"
-	"github.com/cirruslabs/cirrus-cli/internal/agent/http_cache/ghacache/cirruscimock"
-	agentstorage "github.com/cirruslabs/cirrus-cli/internal/agent/storage"
-	"github.com/cirruslabs/cirrus-cli/internal/testutil"
-	"github.com/cirruslabs/cirrus-cli/pkg/api"
-	"github.com/cirruslabs/cirrus-cli/pkg/api/gharesults"
+	"github.com/cirruslabs/omni-cache/internal/api/gharesults"
+	"github.com/cirruslabs/omni-cache/internal/testutil"
+	"github.com/cirruslabs/omni-cache/pkg/protocols/builtin"
+	"github.com/cirruslabs/omni-cache/pkg/server"
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGHACacheV2(t *testing.T) {
-	testutil.NeedsContainerization(t)
-
-	ctx := context.Background()
-
-	conn := cirruscimock.ClientConn(t)
-	backend := agentstorage.NewCirrusStoreBackend(api.NewCirrusCIServiceClient(conn), api.OldTaskIdentification("test", "test"))
-
-	httpCacheURL := "http://" + http_cache.Start(ctx, http_cache.DefaultTransport(), backend,
-		http_cache.WithAzureBlobOpts(azureblob.WithUnexpectedEOFReader()))
+	httpCacheURL := startServer(t)
 
 	client := gharesults.NewCacheServiceJSONClient(httpCacheURL, &http.Client{})
 
@@ -38,14 +28,14 @@ func TestGHACacheV2(t *testing.T) {
 	cacheValue := []byte("Hello, World!\n")
 
 	// Ensure that an entry for our cache key is not present
-	getCacheEntryDownloadURLRes, err := client.GetCacheEntryDownloadURL(ctx, &gharesults.GetCacheEntryDownloadURLRequest{
+	getCacheEntryDownloadURLRes, err := client.GetCacheEntryDownloadURL(t.Context(), &gharesults.GetCacheEntryDownloadURLRequest{
 		Key: cacheKey,
 	})
 	require.NoError(t, err)
 	require.False(t, getCacheEntryDownloadURLRes.Ok)
 
 	// Upload an entry for our cache key
-	createCacheEntryRes, err := client.CreateCacheEntry(ctx, &gharesults.CreateCacheEntryRequest{
+	createCacheEntryRes, err := client.CreateCacheEntry(t.Context(), &gharesults.CreateCacheEntryRequest{
 		Key: cacheKey,
 	})
 	require.NoError(t, err)
@@ -62,12 +52,12 @@ func TestGHACacheV2(t *testing.T) {
 	blockBlobClient, err := azblob.NewClientWithNoCredential(url.Scheme+"://"+url.Host+"/_azureblob", nil)
 	require.NoError(t, err)
 
-	_, err = blockBlobClient.UploadBuffer(ctx, url.ContainerName, url.BlobName, cacheValue, &azblob.UploadBufferOptions{})
+	_, err = blockBlobClient.UploadBuffer(t.Context(), url.ContainerName, url.BlobName, cacheValue, &azblob.UploadBufferOptions{})
 	require.NoError(t, err)
 
 	// Ensure that an entry for our cache key is present
 	// and matches to what we've previously put in the cache
-	getCacheEntryDownloadURLResp, err := client.GetCacheEntryDownloadURL(ctx, &gharesults.GetCacheEntryDownloadURLRequest{
+	getCacheEntryDownloadURLResp, err := client.GetCacheEntryDownloadURL(t.Context(), &gharesults.GetCacheEntryDownloadURLRequest{
 		Key: cacheKey,
 	})
 	require.NoError(t, err)
@@ -86,14 +76,14 @@ func TestGHACacheV2(t *testing.T) {
 	// this is actively used by GitHub Actions Toolkit
 	// to determine whether to enable parallel download
 	// or not.
-	resp, err := blockBlobClient.DownloadStream(ctx, url.ContainerName, url.BlobName, &azblob.DownloadStreamOptions{})
+	resp, err := blockBlobClient.DownloadStream(t.Context(), url.ContainerName, url.BlobName, &azblob.DownloadStreamOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, resp.ContentLength)
 	require.EqualValues(t, len(cacheValue), *resp.ContentLength)
 
 	// Ensure that HTTP range requests are supported
 	buf := make([]byte, 5)
-	n, err := blockBlobClient.DownloadBuffer(ctx, url.ContainerName, url.BlobName, buf, &azblob.DownloadBufferOptions{
+	n, err := blockBlobClient.DownloadBuffer(t.Context(), url.ContainerName, url.BlobName, buf, &azblob.DownloadBufferOptions{
 		Range: azblob.HTTPRange{
 			Offset: 7,
 			Count:  5,
@@ -105,7 +95,9 @@ func TestGHACacheV2(t *testing.T) {
 }
 
 func TestGHACacheV2UploadStream(t *testing.T) {
-	testutil.NeedsContainerization(t)
+	httpCacheURL := startServer(t)
+
+	client := gharesults.NewCacheServiceJSONClient(httpCacheURL, &http.Client{})
 
 	testCases := []struct {
 		Name      string
@@ -123,14 +115,6 @@ func TestGHACacheV2UploadStream(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.Name, func(t *testing.T) {
-			conn := cirruscimock.ClientConn(t)
-			backend := agentstorage.NewCirrusStoreBackend(api.NewCirrusCIServiceClient(conn), api.OldTaskIdentification("test", "test"))
-
-			httpCacheURL := "http://" + http_cache.Start(t.Context(), http_cache.DefaultTransport(), backend,
-				http_cache.WithAzureBlobOpts(azureblob.WithUnexpectedEOFReader()))
-
-			client := gharesults.NewCacheServiceJSONClient(httpCacheURL, &http.Client{})
-
 			cacheKey := uuid.NewString()
 			cacheValue := make([]byte, 50*humanize.MiByte)
 			_, err := cryptorand.Read(cacheValue)
@@ -195,4 +179,20 @@ func TestGHACacheV2UploadStream(t *testing.T) {
 			require.Equal(t, cacheValue, downloadRespBodyBytes)
 		})
 	}
+}
+
+func startServer(t *testing.T) string {
+	t.Helper()
+
+	storage := testutil.NewMultipartStorage(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	srv, err := server.Start(t.Context(), []net.Listener{listener}, storage, builtin.Factories()...)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = srv.Shutdown(context.Background())
+	})
+
+	return "http://" + listener.Addr().String()
 }
