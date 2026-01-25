@@ -32,26 +32,26 @@ const (
 	shutdownTimeout = 10 * time.Second
 )
 
-type serveOptions struct {
+type sidecarOptions struct {
 	bucketName string
 	prefix     string
 }
 
-func newServeCmd() *cobra.Command {
-	opts := &serveOptions{
+func newSidecarCmd() *cobra.Command {
+	opts := &sidecarOptions{
 		bucketName: envOrFirst(bucketEnv),
 		prefix:     envOrFirst(prefixEnv),
 	}
 
 	cmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Start the cache daemon",
+		Use:   "sidecar",
+		Short: "Start the cache sidecar",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// https://github.com/spf13/cobra/issues/340#issuecomment-374617413
 			cmd.SilenceUsage = true
 
-			return runServe(cmd.Context(), opts)
+			return runSidecar(cmd.Context(), opts)
 		},
 	}
 
@@ -61,9 +61,9 @@ func newServeCmd() *cobra.Command {
 	return cmd
 }
 
-func runServe(ctx context.Context, opts *serveOptions) error {
+func runSidecar(ctx context.Context, opts *sidecarOptions) error {
 	if opts == nil {
-		return fmt.Errorf("serve options are nil")
+		return fmt.Errorf("sidecar options are nil")
 	}
 
 	bucketName := strings.TrimSpace(opts.bucketName)

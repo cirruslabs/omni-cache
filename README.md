@@ -25,7 +25,7 @@ export OMNI_CACHE_PREFIX=my-repo
 export AWS_REGION=us-east-1
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
-omni-cache serve
+omni-cache sidecar
 ```
 
 Quick local test with LocalStack (requires Docker):
@@ -45,7 +45,7 @@ omni-cache dev
   shared config/credentials files, instance roles).
 
 CLI flags override env values:
-- `omni-cache serve --bucket ... --prefix ...`
+- `omni-cache sidecar --bucket ... --prefix ...`
 - `omni-cache dev --bucket ... --prefix ... --localstack-image ...`
 
 ## Protocols

@@ -14,7 +14,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	cmd.AddCommand(newServeCmd())
+	cmd.AddCommand(newSidecarCmd())
 	cmd.AddCommand(newDevCmd())
 
 	return cmd
