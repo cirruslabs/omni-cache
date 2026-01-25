@@ -36,8 +36,8 @@ type devOptions struct {
 
 func newDevCmd() *cobra.Command {
 	opts := &devOptions{
-		bucketName:      envOrFirst(bucketEnv, bucketEnvAlt),
-		prefix:          envOrFirst(prefixEnv, prefixEnvAlt),
+		bucketName:      envOrFirst(bucketEnv),
+		prefix:          envOrFirst(prefixEnv),
 		localstackImage: defaultLocalstackImage,
 	}
 	if opts.bucketName == "" {

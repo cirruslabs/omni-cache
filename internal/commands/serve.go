@@ -25,11 +25,9 @@ const (
 	defaultListenAddr = "localhost:12321"
 	defaultPort       = "12321"
 
-	cacheHostEnv = "CIRRUS_HTTP_CACHE_HOST"
+	cacheHostEnv = "OMNI_CACHE_HOST"
 	bucketEnv    = "OMNI_CACHE_BUCKET"
-	bucketEnvAlt = "CIRRUS_HTTP_CACHE_BUCKET"
 	prefixEnv    = "OMNI_CACHE_PREFIX"
-	prefixEnvAlt = "CIRRUS_HTTP_CACHE_PREFIX"
 
 	shutdownTimeout = 10 * time.Second
 )
@@ -41,8 +39,8 @@ type serveOptions struct {
 
 func newServeCmd() *cobra.Command {
 	opts := &serveOptions{
-		bucketName: envOrFirst(bucketEnv, bucketEnvAlt),
-		prefix:     envOrFirst(prefixEnv, prefixEnvAlt),
+		bucketName: envOrFirst(bucketEnv),
+		prefix:     envOrFirst(prefixEnv),
 	}
 
 	cmd := &cobra.Command{
