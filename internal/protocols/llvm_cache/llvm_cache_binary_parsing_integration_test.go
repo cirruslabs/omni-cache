@@ -30,13 +30,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-func TestTartBuildUsesRemoteCache(t *testing.T) {
+func TestBinaryParsingBuildUsesRemoteCache(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("requires macOS")
 	}
 
-	if _, err := exec.LookPath("swift"); err != nil {
-		t.Skip("swift is not available")
+	if _, err := exec.LookPath("xcodebuild"); err != nil {
+		t.Skip("xcodebuild is not available")
 	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")
@@ -51,14 +51,14 @@ func TestTartBuildUsesRemoteCache(t *testing.T) {
 		require.NoError(t, container.Terminate(context.Background()))
 	})
 
-	bucketName := fmt.Sprintf("omni-cache-tart-%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
+	bucketName := fmt.Sprintf("omni-cache-binary-parsing-%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
 	s3Client := newLocalstackS3Client(t, ctx, endpoint)
 
 	stor, err := storage.NewS3Storage(ctx, s3Client, bucketName)
 	require.NoError(t, err)
 	countingStor := newCountingBackend(stor)
 
-	baseDir, err := os.MkdirTemp("/tmp", "omni-cache-tart-")
+	baseDir, err := os.MkdirTemp("/tmp", "omni-cache-binary-parsing-")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = os.RemoveAll(baseDir)
@@ -83,14 +83,20 @@ func TestTartBuildUsesRemoteCache(t *testing.T) {
 
 	require.NoError(t, waitForUnixSocket(ctx, socketPath))
 
-	repoDir := filepath.Join(t.TempDir(), "tart")
-	_, err = runCommand(ctx, "", nil, "git", "clone", "--depth", "1", "https://github.com/cirruslabs/tart", repoDir)
+	repoDir := filepath.Join(t.TempDir(), "swift-binary-parsing")
+	_, err = runCommand(ctx, "", nil, "git", "clone", "--depth", "1", "https://github.com/apple/swift-binary-parsing", repoDir)
 	require.NoError(t, err)
 
 	env := append(os.Environ(),
-		"COMPILATION_CACHE_ENABLE_CACHING=YES",
 		"COMPILATION_CACHE_REMOTE_SERVICE_PATH="+socketPath,
+	)
+
+	_, err = runCommand(ctx, repoDir, env, "xcodebuild", "build",
+		"-project", "Xcode/BinaryParsing.xcodeproj",
+		"-scheme", "BinaryParsing",
+		"COMPILATION_CACHE_ENABLE_CACHING=YES",
 		"COMPILATION_CACHE_ENABLE_PLUGIN=YES",
+		"COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES",
 		"COMPILATION_CACHE_ENABLE_INTEGRATED_QUERIES=YES",
 		"COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES",
 		"SWIFT_ENABLE_COMPILE_CACHE=YES",
@@ -99,15 +105,13 @@ func TestTartBuildUsesRemoteCache(t *testing.T) {
 		"CLANG_ENABLE_COMPILE_CACHE=YES",
 		"CLANG_ENABLE_MODULES=YES",
 	)
-
-	_, err = runCommand(ctx, repoDir, env, "swift", "build", "--build-system", "swiftbuild")
 	require.NoError(t, err)
 
 	if countingStor.totalCalls() == 0 {
-		t.Skip("swift build did not contact the cache service")
+		t.Fatal("xcodebuild did not contact the cache service")
 	}
 	if countingStor.uploadCalls.Load() == 0 {
-		t.Skip("cache service saw no uploads during the build")
+		t.Fatal("cache service saw no uploads during the build")
 	}
 
 	require.Eventually(t, func() bool {

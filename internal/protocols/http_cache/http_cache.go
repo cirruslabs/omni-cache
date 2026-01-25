@@ -10,6 +10,11 @@ import (
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
 
+// Factory wires the http-cache protocol.
+// Endpoints:
+//
+//	GET /{key...} downloads a cache entry.
+//	PUT or POST /{key...} uploads a cache entry.
 type Factory struct{}
 
 func (Factory) ID() string {
