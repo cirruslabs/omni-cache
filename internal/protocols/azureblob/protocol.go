@@ -8,6 +8,12 @@ import (
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
+// Factory wires the azure-blob compatibility protocol used by GHA cache v2 clients.
+// Endpoints (under APIMountPoint):
+//
+//	GET /_azureblob/cirrus-runners-cache/{key...} (supports range requests)
+//	HEAD /_azureblob/cirrus-runners-cache/{key...}
+//	PUT /_azureblob/cirrus-runners-cache/{key...}
 type Factory struct{}
 
 func (Factory) ID() string {

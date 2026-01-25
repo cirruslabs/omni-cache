@@ -10,6 +10,13 @@ import (
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
 
+// Factory wires the llvm-cache gRPC services.
+// Services:
+//
+//	compilation_cache_service.cas.v1.CASDBService
+//	compilation_cache_service.keyvalue.v1.KeyValueDB
+//
+// Served over h2c (plaintext HTTP/2) on the sidecar port.
 type Factory struct{}
 
 func (Factory) ID() string {

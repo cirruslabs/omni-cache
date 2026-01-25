@@ -7,6 +7,12 @@ import (
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
+// Factory wires the gha-cache-v2 (GitHub Actions cache v2) protocol.
+// Twirp JSON endpoints (cache.PathPrefix()):
+//
+//	POST /twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry
+//	POST /twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload
+//	POST /twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL
 type Factory struct{}
 
 func (Factory) ID() string {
