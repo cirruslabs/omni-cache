@@ -63,12 +63,16 @@ Omni Cache ships with built-in protocols enabled.
 - Configure: point your client to `http://<host>:12321/` and use cache keys as paths.
 
 <details>
-<summary>Examples (from Cirrus CI HTTP cache docs)</summary>
+<summary>Examples for cURl, Bazel and Gradle</summary>
+
+Simple cURL example:
 
 ```sh
 export OMNI_CACHE_HOST=localhost:12321
 curl -s -X POST --data-binary @myfolder.tar.gz http://$OMNI_CACHE_HOST/name-key
 ```
+
+[Bazel HTTP Caching](https://bazel.build/remote/caching#http-caching) example:
 
 ```sh
 bazel build \
@@ -78,6 +82,8 @@ bazel build \
   --remote_http_cache=http://$OMNI_CACHE_HOST \
   //...
 ```
+
+[Gradle Build Cache](https://docs.gradle.org/current/userguide/build_cache.html) example:
 
 ```groovy
 ext.isCiServer = System.getenv().containsKey("CI")
