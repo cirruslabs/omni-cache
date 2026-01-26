@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/cirruslabs/omni-cache/internal/protocols/ghacache/rangetopart"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
@@ -19,6 +20,7 @@ type Uploadable struct {
 	RangeToPart *rangetopart.RangeToPart
 
 	finalized bool
+	startedAt time.Time
 	mtx       sync.Mutex
 }
 
@@ -51,6 +53,26 @@ func (uploadable *Uploadable) UploadID() string {
 	return uploadable.uploadID
 }
 
+func (uploadable *Uploadable) MarkStarted() {
+	uploadable.mtx.Lock()
+	defer uploadable.mtx.Unlock()
+
+	if uploadable.startedAt.IsZero() {
+		uploadable.startedAt = time.Now()
+	}
+}
+
+func (uploadable *Uploadable) StartedAt() (time.Time, bool) {
+	uploadable.mtx.Lock()
+	defer uploadable.mtx.Unlock()
+
+	if uploadable.startedAt.IsZero() {
+		return time.Time{}, false
+	}
+
+	return uploadable.startedAt, true
+}
+
 func (uploadable *Uploadable) AppendPart(number uint32, etag string, size int64) error {
 	uploadable.mtx.Lock()
 	defer uploadable.mtx.Unlock()
@@ -63,6 +85,9 @@ func (uploadable *Uploadable) AppendPart(number uint32, etag string, size int64)
 		Number: number,
 		ETag:   etag,
 		Size:   size,
+	}
+	if uploadable.startedAt.IsZero() {
+		uploadable.startedAt = time.Now()
 	}
 
 	return nil

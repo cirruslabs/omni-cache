@@ -12,6 +12,7 @@ import (
 	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob/progressreader"
 	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob/simplerange"
 	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob/unexpectedeofreader"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/dustin/go-humanize"
 )
 
@@ -167,6 +168,7 @@ func (azureBlob *AzureBlob) proxyCacheEntryDownload(
 		return true
 	}
 
+	stats.Default().RecordDownload(bytesRead, time.Since(startProxyingAt))
 	return true
 }
 

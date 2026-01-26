@@ -42,6 +42,17 @@ type CacheInfo struct {
 // ErrCacheNotFound is returned when a cache entry doesn't exist.
 var ErrCacheNotFound = errors.New("cache entry not found")
 
+// IsNotFoundError reports whether err represents a missing cache entry.
+func IsNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrCacheNotFound) {
+		return true
+	}
+	return isNotFoundError(err)
+}
+
 type BlobStorageBackend interface {
 	DownloadURLs(ctx context.Context, key string) ([]*URLInfo, error)
 	UploadURL(ctx context.Context, key string, metadate map[string]string) (*URLInfo, error)

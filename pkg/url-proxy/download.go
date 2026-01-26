@@ -6,7 +6,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	bytestream "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -47,12 +49,14 @@ func (p *Proxy) proxyHTTPDownload(ctx context.Context, w http.ResponseWriter, in
 		return false
 	}
 	w.WriteHeader(resp.StatusCode)
+	startedAt := time.Now()
 	bytesRead, err := io.Copy(w, resp.Body)
 	if err != nil {
 		slog.ErrorContext(ctx, "proxy cache download failed", "url", info.URL, "err", err)
 		return false
 	}
 
+	stats.Default().RecordDownload(bytesRead, time.Since(startedAt))
 	slog.InfoContext(ctx, "proxy cache succeeded", "url", info.URL, "bytesProxied", bytesRead)
 	return true
 }
@@ -78,6 +82,7 @@ func (p *Proxy) proxyGRPCDownload(ctx context.Context, w http.ResponseWriter, in
 		return false
 	}
 
+	startedAt := time.Now()
 	var bytesRead int64
 	for {
 		msg, err := stream.Recv()
@@ -101,6 +106,9 @@ func (p *Proxy) proxyGRPCDownload(ctx context.Context, w http.ResponseWriter, in
 		bytesRead += int64(n)
 	}
 
+	if bytesRead > 0 {
+		stats.Default().RecordDownload(bytesRead, time.Since(startedAt))
+	}
 	slog.InfoContext(ctx, "proxy cache gRPC download succeeded", "url", info.URL, "bytesProxied", bytesRead)
 	return bytesRead > 0
 }
@@ -141,7 +149,11 @@ func (p *Proxy) downloadHTTPToWriter(ctx context.Context, info *storage.URLInfo,
 		return fmt.Errorf("download returned non-successful status %d", resp.StatusCode)
 	}
 
-	_, err = io.Copy(w, resp.Body)
+	startedAt := time.Now()
+	bytesRead, err := io.Copy(w, resp.Body)
+	if err == nil {
+		stats.Default().RecordDownload(bytesRead, time.Since(startedAt))
+	}
 	return err
 }
 
@@ -163,6 +175,8 @@ func (p *Proxy) downloadGRPCToWriter(ctx context.Context, info *storage.URLInfo,
 		return err
 	}
 
+	startedAt := time.Now()
+	var bytesRead int64
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
@@ -179,7 +193,9 @@ func (p *Proxy) downloadGRPCToWriter(ctx context.Context, info *storage.URLInfo,
 		if _, err := w.Write(msg.GetData()); err != nil {
 			return err
 		}
+		bytesRead += int64(len(msg.GetData()))
 	}
 
+	stats.Default().RecordDownload(bytesRead, time.Since(startedAt))
 	return nil
 }

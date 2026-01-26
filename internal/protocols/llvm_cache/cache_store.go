@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
@@ -30,10 +31,12 @@ func (s *cacheStore) download(ctx context.Context, key string) ([]byte, error) {
 	// Pre-flight CacheInfo to surface ErrCacheNotFound consistently across backends.
 	if _, err := s.backend.CacheInfo(ctx, key, nil); err != nil {
 		if errors.Is(err, storage.ErrCacheNotFound) {
+			stats.Default().RecordCacheMiss()
 			return nil, storage.ErrCacheNotFound
 		}
 		return nil, err
 	}
+	stats.Default().RecordCacheHit()
 
 	infos, err := s.backend.DownloadURLs(ctx, key)
 	if err != nil {

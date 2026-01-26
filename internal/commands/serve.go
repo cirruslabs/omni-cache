@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/cirruslabs/omni-cache/pkg/protocols/builtin"
 	"github.com/cirruslabs/omni-cache/pkg/server"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/spf13/cobra"
 )
@@ -137,8 +138,10 @@ func runServer(ctx context.Context, listenAddr, bucketName string, backend stora
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
+	shutdownErr := srv.Shutdown(shutdownCtx)
+	stats.Default().LogSummary()
+	if shutdownErr != nil {
+		return fmt.Errorf("shutdown: %w", shutdownErr)
 	}
 	slog.Info("omni-cache stopped")
 	return nil

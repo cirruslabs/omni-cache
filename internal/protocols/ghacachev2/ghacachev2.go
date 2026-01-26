@@ -11,6 +11,7 @@ import (
 
 	"github.com/cirruslabs/omni-cache/internal/api/gharesults"
 	"github.com/cirruslabs/omni-cache/internal/protocols/azureblob"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/samber/lo"
 	"github.com/twitchtv/twirp"
@@ -58,6 +59,7 @@ func (cache *Cache) GetCacheEntryDownloadURL(ctx context.Context, request *ghare
 	info, err := cache.backend.CacheInfo(ctx, httpCacheKey(request.Key, request.Version), cacheKeyPrefixes)
 	if err != nil {
 		if errors.Is(err, storage.ErrCacheNotFound) {
+			stats.Default().RecordCacheMiss()
 			return &gharesults.GetCacheEntryDownloadURLResponse{
 				Ok: false,
 			}, nil
@@ -67,6 +69,7 @@ func (cache *Cache) GetCacheEntryDownloadURL(ctx context.Context, request *ghare
 			"about cache entry with key %q and version %q: %v", request.Key, request.Version, err)
 	}
 
+	stats.Default().RecordCacheHit()
 	return &gharesults.GetCacheEntryDownloadURLResponse{
 		Ok:                true,
 		SignedDownloadUrl: cache.azureBlobURL(info.Key),

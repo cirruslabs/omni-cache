@@ -2,16 +2,21 @@ package uploadable
 
 import (
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"os"
 	"sync"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type Uploadable struct {
 	id    string
 	local bool
 	parts map[uint32]*Part
+
+	startedAt  time.Time
+	totalBytes int64
 
 	mtx sync.Mutex
 }
@@ -81,7 +86,23 @@ func (uploadable *Uploadable) Local() bool {
 	return uploadable.local
 }
 
-func (uploadable *Uploadable) AppendPart(number uint32, eTag string) error {
+func (uploadable *Uploadable) MarkStarted() {
+	uploadable.mtx.Lock()
+	defer uploadable.mtx.Unlock()
+
+	if uploadable.startedAt.IsZero() {
+		uploadable.startedAt = time.Now()
+	}
+}
+
+func (uploadable *Uploadable) Stats() (int64, time.Time) {
+	uploadable.mtx.Lock()
+	defer uploadable.mtx.Unlock()
+
+	return uploadable.totalBytes, uploadable.startedAt
+}
+
+func (uploadable *Uploadable) AppendPart(number uint32, eTag string, size int64) error {
 	uploadable.mtx.Lock()
 	defer uploadable.mtx.Unlock()
 
@@ -91,6 +112,13 @@ func (uploadable *Uploadable) AppendPart(number uint32, eTag string) error {
 
 	uploadable.parts[number] = &Part{
 		eTag: eTag,
+	}
+	if size < 0 {
+		size = 0
+	}
+	uploadable.totalBytes += size
+	if uploadable.startedAt.IsZero() {
+		uploadable.startedAt = time.Now()
 	}
 
 	return nil
@@ -123,6 +151,10 @@ func (uploadable *Uploadable) AppendPartLocal(number uint32, r io.Reader) error 
 	uploadable.parts[number] = &Part{
 		file:     file,
 		fileSize: n,
+	}
+	uploadable.totalBytes += n
+	if uploadable.startedAt.IsZero() {
+		uploadable.startedAt = time.Now()
 	}
 
 	return nil
