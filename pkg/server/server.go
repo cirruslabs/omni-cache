@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
@@ -50,13 +51,14 @@ func StartDefault(ctx context.Context, backend storage.BlobStorageBackend, facto
 
 	tcpListener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		if !fromEnv {
-			slog.Warn("Port 12321 is occupied, looking for another one", "err", err)
-			tcpListener, err = net.Listen("tcp", fallbackTCPListenAddr)
-			if err != nil {
-				return nil, fmt.Errorf("listen on tcp: %w", err)
-			}
-		} else {
+		if fromEnv && !isAddrInUse(err) {
+			return nil, fmt.Errorf("listen on tcp: %w", err)
+		}
+
+		fallbackAddr := fallbackListenAddr(listenAddr)
+		slog.Warn("TCP listen address unavailable, trying ephemeral port", "addr", listenAddr, "fallback", fallbackAddr, "err", err)
+		tcpListener, err = net.Listen("tcp", fallbackAddr)
+		if err != nil {
 			return nil, fmt.Errorf("listen on tcp: %w", err)
 		}
 	}
@@ -123,6 +125,27 @@ func resolveDefaultListenAddr() (string, bool, error) {
 	}
 
 	return addr, true, nil
+}
+
+func fallbackListenAddr(listenAddr string) string {
+	host, _, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return fallbackTCPListenAddr
+	}
+
+	return net.JoinHostPort(host, "0")
+}
+
+func isAddrInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+
+	return strings.Contains(err.Error(), "address already in use")
 }
 
 func Start(ctx context.Context, listeners []net.Listener, backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.Server, error) {
