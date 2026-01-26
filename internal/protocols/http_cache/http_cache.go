@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
@@ -51,12 +52,18 @@ func (p *protocol) downloadCache(w http.ResponseWriter, r *http.Request) {
 
 	infos, err := p.storageBackend.DownloadURLs(r.Context(), cacheKey)
 	if err != nil {
+		if !stats.ShouldSkipHitMiss(r) && storage.IsNotFoundError(err) {
+			stats.Default().RecordCacheMiss()
+		}
 		slog.ErrorContext(r.Context(), "cache download failed", "cacheKey", cacheKey, "err", err)
 		w.WriteHeader(http.StatusNotFound)
 
 		return
 	}
 
+	if !stats.ShouldSkipHitMiss(r) {
+		stats.Default().RecordCacheHit()
+	}
 	slog.InfoContext(r.Context(), "redirecting cache download", "cacheKey", cacheKey)
 	p.proxyDownloadFromURLs(w, r, infos)
 }

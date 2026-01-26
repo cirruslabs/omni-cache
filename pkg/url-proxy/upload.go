@@ -7,9 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	bytestream "google.golang.org/genproto/googleapis/bytestream"
 
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
@@ -35,7 +37,8 @@ func (p *Proxy) ProxyUploadToURL(ctx context.Context, w http.ResponseWriter, inf
 }
 
 func (p *Proxy) proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info *storage.URLInfo, resource UploadResource) bool {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, info.URL, bufio.NewReader(resource.Body))
+	bodyReader := &countingReader{reader: resource.Body}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, info.URL, bufio.NewReader(bodyReader))
 	if err != nil {
 		slog.ErrorContext(ctx, "cache upload request creation failed", "resourceName", resource.ResourceName, "uploadURL", info.URL, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -47,6 +50,7 @@ func (p *Proxy) proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info
 		req.Header.Set(k, v)
 	}
 
+	startedAt := time.Now()
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to proxy upload of %s cache! %s", resource.ResourceName, err)
@@ -83,6 +87,14 @@ func (p *Proxy) proxyHTTPUpload(ctx context.Context, w http.ResponseWriter, info
 		w.WriteHeader(resp.StatusCode)
 	}
 
+	if resp.StatusCode < http.StatusBadRequest {
+		uploadedBytes := bodyReader.Bytes()
+		if uploadedBytes == 0 && resource.ContentLength > 0 {
+			uploadedBytes = resource.ContentLength
+		}
+		stats.Default().RecordUpload(uploadedBytes, time.Since(startedAt))
+	}
+
 	return resp.StatusCode < 400
 }
 
@@ -109,6 +121,7 @@ func (p *Proxy) proxyGRPCUpload(ctx context.Context, w http.ResponseWriter, info
 		return false
 	}
 
+	startedAt := time.Now()
 	reader := bufio.NewReader(resource.Body)
 	buffer := make([]byte, 64*1024)
 
@@ -168,6 +181,7 @@ func (p *Proxy) proxyGRPCUpload(ctx context.Context, w http.ResponseWriter, info
 	}
 
 	w.WriteHeader(http.StatusCreated)
+	stats.Default().RecordUpload(written, time.Since(startedAt))
 	return true
 }
 
@@ -189,7 +203,8 @@ func (p *Proxy) UploadFromReader(ctx context.Context, info *storage.URLInfo, res
 }
 
 func (p *Proxy) uploadHTTPFromReader(ctx context.Context, info *storage.URLInfo, body io.Reader, contentLength int64) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, info.URL, bufio.NewReader(body))
+	bodyReader := &countingReader{reader: body}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, info.URL, bufio.NewReader(bodyReader))
 	if err != nil {
 		return err
 	}
@@ -201,6 +216,7 @@ func (p *Proxy) uploadHTTPFromReader(ctx context.Context, info *storage.URLInfo,
 		req.Header.Set(k, v)
 	}
 
+	startedAt := time.Now()
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -211,6 +227,11 @@ func (p *Proxy) uploadHTTPFromReader(ctx context.Context, info *storage.URLInfo,
 		return fmt.Errorf("upload returned status %d", resp.StatusCode)
 	}
 
+	uploadedBytes := bodyReader.Bytes()
+	if uploadedBytes == 0 && contentLength > 0 {
+		uploadedBytes = contentLength
+	}
+	stats.Default().RecordUpload(uploadedBytes, time.Since(startedAt))
 	return nil
 }
 
@@ -230,6 +251,7 @@ func (p *Proxy) uploadGRPCFromReader(ctx context.Context, info *storage.URLInfo,
 		return err
 	}
 
+	startedAt := time.Now()
 	reader := bufio.NewReader(body)
 	buffer := make([]byte, 64*1024)
 
@@ -273,5 +295,6 @@ func (p *Proxy) uploadGRPCFromReader(ctx context.Context, info *storage.URLInfo,
 		return fmt.Errorf("bytestream committed size differs from bytes sent")
 	}
 
+	stats.Default().RecordUpload(written, time.Since(startedAt))
 	return nil
 }

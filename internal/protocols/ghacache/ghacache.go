@@ -12,9 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cirruslabs/omni-cache/internal/protocols/ghacache/httprange"
 	"github.com/cirruslabs/omni-cache/internal/protocols/ghacache/uploadable"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
@@ -74,6 +76,7 @@ func (cache *GHACache) get(writer http.ResponseWriter, request *http.Request) {
 	info, err := cache.backend.CacheInfo(request.Context(), keysWithVersions[0], cacheKeyPrefixes)
 	if err != nil {
 		if errors.Is(err, storage.ErrCacheNotFound) {
+			stats.Default().RecordCacheMiss()
 			writer.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -83,6 +86,7 @@ func (cache *GHACache) get(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	stats.Default().RecordCacheHit()
 	jsonResp := struct {
 		Key string `json:"cacheKey"`
 		URL string `json:"archiveLocation"`
@@ -139,6 +143,7 @@ func (cache *GHACache) updateUploadable(writer http.ResponseWriter, request *htt
 		return
 	}
 	currentUploadable := uploadableValue.(*uploadable.Uploadable)
+	currentUploadable.MarkStarted()
 
 	httpRanges, err := httprange.ParseRange(request.Header.Get("Content-Range"), math.MaxInt64)
 	if err != nil {
@@ -269,6 +274,10 @@ func (cache *GHACache) commitUploadable(writer http.ResponseWriter, request *htt
 		return
 	}
 
+	if startedAt, ok := currentUploadable.StartedAt(); ok {
+		stats.Default().RecordUpload(partsSize, time.Since(startedAt))
+	}
+
 	cache.uploadables.Delete(id)
 
 	writer.WriteHeader(http.StatusCreated)
@@ -294,7 +303,13 @@ func (cache *GHACache) httpCacheURL(request *http.Request, keyWithVersion string
 		scheme = "https"
 	}
 
-	return fmt.Sprintf("%s://%s/%s", scheme, host, url.PathEscape(keyWithVersion))
+	rawURL := fmt.Sprintf("%s://%s/%s", scheme, host, url.PathEscape(keyWithVersion))
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	stats.AddSkipHitMissQuery(parsed)
+	return parsed.String()
 }
 
 func getID(request *http.Request) (int64, bool) {

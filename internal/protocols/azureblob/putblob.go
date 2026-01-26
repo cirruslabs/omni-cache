@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	uploadablepkg "github.com/cirruslabs/omni-cache/internal/protocols/azureblob/uploadable"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	omnistorage "github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/dustin/go-humanize"
 	"github.com/go-chi/render"
@@ -75,6 +77,7 @@ func (azureBlob *AzureBlob) putBlob(writer http.ResponseWriter, request *http.Re
 	// Content-Length is required to avoid HTTP 411
 	req.ContentLength = int64(contentLength)
 
+	startedAt := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fail(writer, request, http.StatusInternalServerError, "failed to perform request to proxy "+
@@ -95,6 +98,7 @@ func (azureBlob *AzureBlob) putBlob(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
+	stats.Default().RecordUpload(int64(contentLength), time.Since(startedAt))
 	writer.WriteHeader(http.StatusCreated)
 }
 
@@ -134,6 +138,7 @@ func (azureBlob *AzureBlob) putBlock(writer http.ResponseWriter, request *http.R
 
 		return uploadablepkg.New(local)
 	})
+	uploadable.MarkStarted()
 
 	if uploadable.Local() {
 		if err := uploadable.AppendPartLocal(partNumber, request.Body); err != nil {
@@ -200,7 +205,7 @@ func (azureBlob *AzureBlob) putBlock(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	if err := uploadable.AppendPart(partNumber, resp.Header.Get("ETag")); err != nil {
+	if err := uploadable.AppendPart(partNumber, resp.Header.Get("ETag"), int64(contentLength)); err != nil {
 		fail(writer, request, http.StatusBadRequest, "failed to finalize part upload", "err", err)
 
 		return
@@ -320,6 +325,10 @@ func (azureBlob *AzureBlob) putBlockList(writer http.ResponseWriter, request *ht
 			return
 		}
 
+		if totalBytes, startedAt := uploadable.Stats(); !startedAt.IsZero() {
+			stats.Default().RecordUpload(totalBytes, time.Since(startedAt))
+		}
+		azureBlob.uploadables.Delete(key)
 		writer.WriteHeader(http.StatusCreated)
 
 		return
@@ -333,5 +342,9 @@ func (azureBlob *AzureBlob) putBlockList(writer http.ResponseWriter, request *ht
 		return
 	}
 
+	if totalBytes, startedAt := uploadable.Stats(); !startedAt.IsZero() {
+		stats.Default().RecordUpload(totalBytes, time.Since(startedAt))
+	}
+	azureBlob.uploadables.Delete(key)
 	writer.WriteHeader(http.StatusCreated)
 }
