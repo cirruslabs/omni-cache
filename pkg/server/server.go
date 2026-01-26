@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/cirruslabs/omni-cache/pkg/protocols"
 	"github.com/cirruslabs/omni-cache/pkg/protocols/builtin"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -223,6 +226,7 @@ func createMuxAndGRPCServer(host string, backend storage.BlobStorageBackend, fac
 	}.WithDefaults()
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /stats", statsHandler)
 	grpcServer := grpc.NewServer()
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -285,6 +289,32 @@ func listenUnixSocket(socketPath string) (net.Listener, error) {
 	}
 
 	return listener, nil
+}
+
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	if acceptsJSON(r.Header.Get("Accept")) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(stats.Default().Summary()); err != nil {
+			slog.ErrorContext(r.Context(), "failed to encode stats response", "err", err)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, stats.Default().SummaryText())
+}
+
+func acceptsJSON(acceptHeader string) bool {
+	if strings.TrimSpace(acceptHeader) == "" {
+		return false
+	}
+	for _, part := range strings.Split(acceptHeader, ",") {
+		mediaType := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		if mediaType == "application/json" || strings.HasSuffix(mediaType, "+json") {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultSocketPath returns the default unix socket path for omni-cache.

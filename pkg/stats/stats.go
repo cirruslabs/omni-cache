@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -33,10 +34,27 @@ type Snapshot struct {
 	Uploads     TransferSnapshot
 }
 
+type Summary struct {
+	CacheHits           int64           `json:"cache_hits"`
+	CacheMisses         int64           `json:"cache_misses"`
+	CacheHitRatePercent float64         `json:"cache_hit_rate_percent"`
+	Downloads           TransferSummary `json:"downloads"`
+	Uploads             TransferSummary `json:"uploads"`
+}
+
 type TransferSnapshot struct {
 	Count    int64
 	Bytes    int64
 	Duration time.Duration
+}
+
+type TransferSummary struct {
+	Count         int64   `json:"count"`
+	Bytes         int64   `json:"bytes"`
+	DurationMs    int64   `json:"duration_ms"`
+	AvgBytes      int64   `json:"avg_bytes"`
+	AvgDurationMs int64   `json:"avg_duration_ms"`
+	BytesPerSec   float64 `json:"bytes_per_sec"`
 }
 
 var defaultCollector Collector
@@ -70,6 +88,24 @@ func (c *Collector) Snapshot() Snapshot {
 	}
 }
 
+func (c *Collector) Summary() Summary {
+	snapshot := c.Snapshot()
+	totalLookups := snapshot.CacheHits + snapshot.CacheMisses
+
+	var hitRate float64
+	if totalLookups > 0 {
+		hitRate = (float64(snapshot.CacheHits) / float64(totalLookups)) * 100
+	}
+
+	return Summary{
+		CacheHits:           snapshot.CacheHits,
+		CacheMisses:         snapshot.CacheMisses,
+		CacheHitRatePercent: hitRate,
+		Downloads:           summarizeTransfer(snapshot.Downloads),
+		Uploads:             summarizeTransfer(snapshot.Uploads),
+	}
+}
+
 func (c *Collector) LogSummary() {
 	snapshot := c.Snapshot()
 	totalLookups := snapshot.CacheHits + snapshot.CacheMisses
@@ -82,6 +118,20 @@ func (c *Collector) LogSummary() {
 		"downloads", formatTransferSummary(snapshot.Downloads),
 		"uploads", formatTransferSummary(snapshot.Uploads),
 	)
+}
+
+func (c *Collector) SummaryText() string {
+	snapshot := c.Snapshot()
+	totalLookups := snapshot.CacheHits + snapshot.CacheMisses
+
+	var builder strings.Builder
+	builder.WriteString("omni-cache stats\n")
+	fmt.Fprintf(&builder, "cache hits: %d\n", snapshot.CacheHits)
+	fmt.Fprintf(&builder, "cache misses: %d\n", snapshot.CacheMisses)
+	fmt.Fprintf(&builder, "cache hit rate: %s\n", formatPercent(snapshot.CacheHits, totalLookups))
+	fmt.Fprintf(&builder, "downloads: %s\n", formatTransferSummary(snapshot.Downloads))
+	fmt.Fprintf(&builder, "uploads: %s\n", formatTransferSummary(snapshot.Uploads))
+	return builder.String()
 }
 
 func (c *transferCounter) record(bytes int64, duration time.Duration) {
@@ -101,6 +151,24 @@ func (c *transferCounter) snapshot() TransferSnapshot {
 		Count:    c.count.Load(),
 		Bytes:    c.bytes.Load(),
 		Duration: time.Duration(c.duration.Load()),
+	}
+}
+
+func summarizeTransfer(snapshot TransferSnapshot) TransferSummary {
+	if snapshot.Count == 0 {
+		return TransferSummary{}
+	}
+
+	avgBytes := snapshot.Bytes / snapshot.Count
+	avgDuration := time.Duration(snapshot.Duration.Nanoseconds() / snapshot.Count)
+
+	return TransferSummary{
+		Count:         snapshot.Count,
+		Bytes:         snapshot.Bytes,
+		DurationMs:    snapshot.Duration.Milliseconds(),
+		AvgBytes:      avgBytes,
+		AvgDurationMs: avgDuration.Milliseconds(),
+		BytesPerSec:   rateBytes(snapshot.Bytes, snapshot.Duration),
 	}
 }
 
@@ -126,8 +194,7 @@ func formatRate(totalBytes int64, duration time.Duration) string {
 	if totalBytes <= 0 || duration <= 0 {
 		return "0 B/s"
 	}
-	rate := float64(totalBytes) / duration.Seconds()
-	return fmt.Sprintf("%s/s", humanize.Bytes(uint64(rate)))
+	return fmt.Sprintf("%s/s", humanize.Bytes(uint64(rateBytes(totalBytes, duration))))
 }
 
 func formatDuration(duration time.Duration) string {
@@ -143,6 +210,13 @@ func formatPercent(numerator, denominator int64) string {
 	}
 	value := (float64(numerator) / float64(denominator)) * 100
 	return fmt.Sprintf("%.1f%%", value)
+}
+
+func rateBytes(totalBytes int64, duration time.Duration) float64 {
+	if totalBytes <= 0 || duration <= 0 {
+		return 0
+	}
+	return float64(totalBytes) / duration.Seconds()
 }
 
 func AddSkipHitMissQuery(target *url.URL) {
