@@ -98,16 +98,58 @@ buildCache {
 </details>
 
 ### [GitHub Actions Cache v1 (`gha-cache`)][gha-cache-factory]
-- Supported tools: `actions/cache` (legacy v1 API; deprecated by GitHub), `go-actions-cache`
-  (v1 mode), BuildKit `type=gha` (v1 mode).
-- Configure: set `ACTIONS_CACHE_URL=http://<host>:12321` and ensure `ACTIONS_RUNTIME_TOKEN` is set if
-  your client requires it.
+- Supported tools: BuildKit `type=gha` (v1 mode).
+- Configure: use `type=gha,url=http://127.0.0.1:12321/`
+
+<details>
+<summary>BuildKit example (GitHub Actions)</summary>
+
+```yaml
+steps:
+  - name: Set up Docker Buildx
+    uses: docker/setup-buildx-action@v3
+    with:
+      driver-opts: network=host
+  - name: Build with cache
+    uses: docker/build-push-action@v6
+    with:
+      push: true
+      tags: user/app:latest
+      cache-from: type=gha,url=http://127.0.0.1:12321/
+      cache-to: type=gha,url=http://127.0.0.1:12321/,mode=max
+```
+
+> [!NOTE]
+> The `network=host` driver option allows BuildKit to reach the sidecar on `127.0.0.1`.
+
+</details>
 
 ### [GitHub Actions Cache v2 (`gha-cache-v2`)][gha-cache-v2-factory]
-- Supported tools: `actions/cache` (v2 API), `go-actions-cache` (v2 mode), BuildKit `type=gha` (v2 mode).
-- Configure: set `ACTIONS_CACHE_SERVICE_V2=true` (or `ACTIONS_CACHE_API_FORCE_VERSION=v2` for
-  `go-actions-cache`), set `ACTIONS_RESULTS_URL=http://<host>:12321`, and provide
-  `ACTIONS_RUNTIME_TOKEN` if your client requires it.
+- Supported tools: BuildKit (v2 mode).
+- Configure: use `type=gha,version=2,url_v2=http://127.0.0.1:12321/`
+
+<details>
+<summary>BuildKit example v2 (GitHub Actions)</summary>
+
+```yaml
+steps:
+  - name: Set up Docker Buildx
+    uses: docker/setup-buildx-action@v3
+    with:
+      driver-opts: network=host
+  - name: Build with cache
+    uses: docker/build-push-action@v6
+    with:
+      push: true
+      tags: user/app:latest
+      cache-from: type=gha,version=2,url_v2=http://127.0.0.1:12321/
+      cache-to: type=gha,version=2,url_v2=http://127.0.0.1:12321/,mode=max
+```
+
+> [!NOTE]
+> The `network=host` driver option allows BuildKit to reach the sidecar on `127.0.0.1`.
+
+</details>
 
 ### [LLVM Compilation Cache (`llvm-cache`)][llvm-cache-factory] aka Xcode Cache
 - Supported tools: LLVM compilation cache clients (for example, Xcode/xcodebuild) that implement
