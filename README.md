@@ -6,9 +6,11 @@ host network and tools do not need direct S3 credentials.
 
 ## Installation
 
-```sh
-brew install cirruslabs/cli/omni-cache
-```
+- [Homebrew](INSTALL.md#homebrew)
+- [Debian-based distributions](INSTALL.md#debian-based-distributions) (Debian, Ubuntu, etc.)
+- [RPM-based distributions](INSTALL.md#rpm-based-distributions) (Fedora, CentOS, etc.)
+- [Prebuilt Binary](INSTALL.md#prebuilt-binary)
+- [Golang](INSTALL.md#golang)
 
 ## Sidecar mode
 
