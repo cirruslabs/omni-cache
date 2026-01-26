@@ -227,6 +227,7 @@ func createMuxAndGRPCServer(host string, backend storage.BlobStorageBackend, fac
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /stats", statsHandler)
+	mux.HandleFunc("DELETE /stats", statsResetHandler)
 	grpcServer := grpc.NewServer()
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -292,6 +293,15 @@ func listenUnixSocket(socketPath string) (net.Listener, error) {
 }
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
+	writeStatsResponse(w, r)
+}
+
+func statsResetHandler(w http.ResponseWriter, r *http.Request) {
+	stats.Default().Reset()
+	writeStatsResponse(w, r)
+}
+
+func writeStatsResponse(w http.ResponseWriter, r *http.Request) {
 	if acceptsJSON(r.Header.Get("Accept")) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(stats.Default().Summary()); err != nil {

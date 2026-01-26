@@ -79,6 +79,13 @@ func (c *Collector) RecordUpload(bytes int64, duration time.Duration) {
 	c.uploads.record(bytes, duration)
 }
 
+func (c *Collector) Reset() {
+	c.cacheHits.Store(0)
+	c.cacheMiss.Store(0)
+	c.downloads.reset()
+	c.uploads.reset()
+}
+
 func (c *Collector) Snapshot() Snapshot {
 	return Snapshot{
 		CacheHits:   c.cacheHits.Load(),
@@ -152,6 +159,12 @@ func (c *transferCounter) snapshot() TransferSnapshot {
 		Bytes:    c.bytes.Load(),
 		Duration: time.Duration(c.duration.Load()),
 	}
+}
+
+func (c *transferCounter) reset() {
+	c.count.Store(0)
+	c.bytes.Store(0)
+	c.duration.Store(0)
 }
 
 func summarizeTransfer(snapshot TransferSnapshot) TransferSummary {
