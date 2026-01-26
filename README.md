@@ -80,8 +80,7 @@ bazel build \
 ```
 
 ```groovy
-ext.isCiServer = System.getenv().containsKey("CIRRUS_CI")
-ext.isMasterBranch = System.getenv()["CIRRUS_BRANCH"] == "master"
+ext.isCiServer = System.getenv().containsKey("CI")
 ext.buildCacheHost = System.getenv().getOrDefault("OMNI_CACHE_HOST", "localhost:12321")
 
 buildCache {
