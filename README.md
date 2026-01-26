@@ -110,17 +110,38 @@ buildCache {
   `go-actions-cache`), set `ACTIONS_RESULTS_URL=http://<host>:12321`, and provide
   `ACTIONS_RUNTIME_TOKEN` if your client requires it.
 
-### [Azure Blob compatibility (`azure-blob`)][azure-blob-factory]
-- Supported tools: GitHub Actions cache v2 clients that speak Azure Blob APIs (for example,
-  `go-actions-cache`, BuildKit).
-- Configure: used via signed URLs returned by `gha-cache-v2`. For direct testing, point an Azure
-  Blob SDK to `http://<host>:12321/_azureblob`.
-
-### [LLVM Compilation Cache (`llvm-cache`)][llvm-cache-factory]
+### [LLVM Compilation Cache (`llvm-cache`)][llvm-cache-factory] aka Xcode Cache
 - Supported tools: LLVM compilation cache clients (for example, Xcode/xcodebuild) that implement
   `compilation_cache_service` gRPC APIs.
-- Configure: set the gRPC target to `http://<host>:12321` and enable plaintext/h2c if required by
-  your client.
+
+<details>
+<summary>Xcode Build Settings</summary>
+
+Add the following build settings to your Xcode project:
+
+| Setting                                       | Value                               |
+|-----------------------------------------------|-------------------------------------|
+| `COMPILATION_CACHE_ENABLE_CACHING`            | `YES`                               |
+| `COMPILATION_CACHE_ENABLE_PLUGIN`             | `YES`                               |
+| `COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS` | `YES`                               |
+| `COMPILATION_CACHE_REMOTE_SERVICE_PATH`       | `$HOME/.cirruslabs/omni-cache.sock` |
+
+> [!NOTE]
+> `COMPILATION_CACHE_REMOTE_SERVICE_PATH` and `COMPILATION_CACHE_ENABLE_PLUGIN` must be added as
+> **user-defined build settings** since they are not exposed in Xcode's build settings UI.
+
+Alternatively, pass these settings directly to xcodebuild:
+
+```sh
+xcodebuild \
+  COMPILATION_CACHE_ENABLE_CACHING=YES \
+  COMPILATION_CACHE_ENABLE_PLUGIN=YES \
+  COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
+  COMPILATION_CACHE_REMOTE_SERVICE_PATH=$HOME/.cirruslabs/omni-cache.sock \
+  ...
+```
+
+</details>
 
 [http-cache-factory]: internal/protocols/http_cache/http_cache.go
 [gha-cache-factory]: internal/protocols/ghacache/protocol.go
