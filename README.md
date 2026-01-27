@@ -1,8 +1,8 @@
 # Omni Cache Sidecar
 
 Omni Cache is a sidecar daemon that exposes multiple cache protocols on a local endpoint while
-storing blobs in S3. Run it next to a CI runner or build job so cache traffic stays on the
-host network and tools do not need direct S3 credentials.
+storing blobs in an S3-compatible storage. Run it next to a CI runner or build job so cache traffic stays
+on the host network and tools do not need direct S3 credentials.
 
 ## Installation
 
@@ -59,6 +59,8 @@ Omni Cache ships with built-in protocols enabled. See `PROTOCOLS.md` for build-s
 - [Gradle (HTTP Build Cache)](PROTOCOLS.md#gradle-http-build-cache)
 - [Xcode / LLVM Compilation Cache](PROTOCOLS.md#xcode--llvm-compilation-cache)
 - [Custom HTTP Clients](PROTOCOLS.md#custom-http-clients)
+
+Need a custom protocol? Check [existing issues](https://github.com/cirruslabs/omni-cache/issues?q=is%3Aissue%20state%3Aopen%20Support) or create a new one.
 
 ## Development
 
