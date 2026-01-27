@@ -50,6 +50,31 @@ CLI flags override env values:
 - `omni-cache sidecar --bucket ... --prefix ...`
 - `omni-cache dev --bucket ... --prefix ... --localstack-image ...`
 
+## Stats endpoint
+
+Omni Cache exposes a lightweight stats endpoint on the same host as the sidecar.
+
+- `GET /stats` returns counters and transfer metrics.
+- `DELETE /stats` resets the counters and returns the post-reset snapshot.
+- Responses are `text/plain` by default. Send `Accept: application/json` (or `+json`) to get JSON.
+- This endpoint is especially useful as the final step of a CI pipeline to record cache effectiveness.
+
+Text output example:
+
+```
+omni-cache stats
+cache hits: 10472
+cache misses: 117
+cache hit rate: 98.9%
+downloads: count=10472 total=1.9 GiB avg=194 KiB avgTime=7ms avgSpeed=28 MB/s
+uploads: count=3810 total=131 MiB avg=35 KiB avgTime=361ms avgSpeed=100 kB/s
+```
+
+JSON fields:
+
+- `cache_hits`, `cache_misses`, `cache_hit_rate_percent`
+- `downloads` / `uploads`: `count`, `bytes`, `duration_ms`, `avg_bytes`, `avg_duration_ms`, `bytes_per_sec`
+
 ## Protocols
 
 Omni Cache ships with built-in protocols enabled. See `PROTOCOLS.md` for build-system-focused examples:
