@@ -34,6 +34,10 @@ type Snapshot struct {
 	Uploads     TransferSnapshot
 }
 
+func (s Snapshot) HasActivity() bool {
+	return s.CacheHits > 0 || s.CacheMisses > 0 || s.Downloads.Count > 0 || s.Uploads.Count > 0
+}
+
 type Summary struct {
 	CacheHits           int64           `json:"cache_hits"`
 	CacheMisses         int64           `json:"cache_misses"`
@@ -139,6 +143,18 @@ func (c *Collector) SummaryText() string {
 	fmt.Fprintf(&builder, "downloads: %s\n", formatTransferSummary(snapshot.Downloads))
 	fmt.Fprintf(&builder, "uploads: %s\n", formatTransferSummary(snapshot.Uploads))
 	return builder.String()
+}
+
+func FormatGithubActionsSummary(snapshot Snapshot) string {
+	totalLookups := snapshot.CacheHits + snapshot.CacheMisses
+	return fmt.Sprintf(
+		"::notice title=Omni Cache::Cache hits: %d; cache misses: %d; hit rate: %s; downloads: %s; uploads: %s",
+		snapshot.CacheHits,
+		snapshot.CacheMisses,
+		formatPercent(snapshot.CacheHits, totalLookups),
+		formatTransferSummary(snapshot.Downloads),
+		formatTransferSummary(snapshot.Uploads),
+	)
 }
 
 func (c *transferCounter) record(bytes int64, duration time.Duration) {

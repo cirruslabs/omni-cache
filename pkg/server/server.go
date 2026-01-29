@@ -302,6 +302,17 @@ func statsResetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeStatsResponse(w http.ResponseWriter, r *http.Request) {
+	if acceptsGithubActions(r.Header.Get("Accept")) {
+		snapshot := stats.Default().Snapshot()
+		if !snapshot.HasActivity() {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, stats.FormatGithubActionsSummary(snapshot))
+		return
+	}
+
 	if acceptsJSON(r.Header.Get("Accept")) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(stats.Default().Summary()); err != nil {
@@ -321,6 +332,19 @@ func acceptsJSON(acceptHeader string) bool {
 	for _, part := range strings.Split(acceptHeader, ",") {
 		mediaType := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
 		if mediaType == "application/json" || strings.HasSuffix(mediaType, "+json") {
+			return true
+		}
+	}
+	return false
+}
+
+func acceptsGithubActions(acceptHeader string) bool {
+	if strings.TrimSpace(acceptHeader) == "" {
+		return false
+	}
+	for _, part := range strings.Split(acceptHeader, ",") {
+		mediaType := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		if strings.Contains(mediaType, "github-actions") {
 			return true
 		}
 	}

@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -25,4 +26,40 @@ func TestCollectorReset(t *testing.T) {
 	require.Equal(t, int64(0), snapshot.Uploads.Count)
 	require.Equal(t, int64(0), snapshot.Uploads.Bytes)
 	require.Equal(t, time.Duration(0), snapshot.Uploads.Duration)
+}
+
+func TestSnapshotHasActivity(t *testing.T) {
+	require.False(t, Snapshot{}.HasActivity())
+	require.True(t, Snapshot{CacheHits: 1}.HasActivity())
+	require.True(t, Snapshot{CacheMisses: 1}.HasActivity())
+	require.True(t, Snapshot{Downloads: TransferSnapshot{Count: 1}}.HasActivity())
+	require.True(t, Snapshot{Uploads: TransferSnapshot{Count: 1}}.HasActivity())
+}
+
+func TestFormatGithubActionsSummary(t *testing.T) {
+	snapshot := Snapshot{
+		CacheHits:   2,
+		CacheMisses: 1,
+		Downloads: TransferSnapshot{
+			Count:    1,
+			Bytes:    1024,
+			Duration: time.Second,
+		},
+		Uploads: TransferSnapshot{
+			Count:    2,
+			Bytes:    2048,
+			Duration: 2 * time.Second,
+		},
+	}
+
+	expected := fmt.Sprintf(
+		"::notice title=Omni Cache::Cache hits: %d; cache misses: %d; hit rate: %s; downloads: %s; uploads: %s",
+		snapshot.CacheHits,
+		snapshot.CacheMisses,
+		formatPercent(snapshot.CacheHits, snapshot.CacheHits+snapshot.CacheMisses),
+		formatTransferSummary(snapshot.Downloads),
+		formatTransferSummary(snapshot.Uploads),
+	)
+
+	require.Equal(t, expected, FormatGithubActionsSummary(snapshot))
 }
