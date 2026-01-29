@@ -16,6 +16,7 @@ func NewRootCmd() *cobra.Command {
 
 	cmd.AddCommand(newSidecarCmd())
 	cmd.AddCommand(newDevCmd())
+	cmd.AddCommand(newGoCacheProgCmd())
 
 	return cmd
 }

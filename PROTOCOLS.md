@@ -9,6 +9,7 @@ build system or tool and points to the protocol you should use.
 - [Bazel (HTTP cache)](#bazel-http-cache)
 - [Gradle (HTTP build cache)](#gradle-http-build-cache)
 - [Xcode / LLVM compilation cache](#xcode--llvm-compilation-cache)
+- [Go build cache (GOCACHEPROG)](#go-build-cache-gocacheprog)
 - [Custom HTTP clients](#custom-http-clients)
 
 ## Docker Layer Caching (GitHub Actions cache)
@@ -115,6 +116,28 @@ xcodebuild \
   COMPILATION_CACHE_REMOTE_SERVICE_PATH=$HOME/.cirruslabs/omni-cache.sock \
   ...
 ```
+
+## Go build cache (GOCACHEPROG)
+
+Go supports external cache helpers via `GOCACHEPROG`. Omni Cache can act as that helper
+by connecting to a running omni-cache daemon over the local socket.
+
+```sh
+export OMNI_CACHE_BUCKET=ci-cache
+export OMNI_CACHE_PREFIX=my-repo
+omni-cache sidecar &
+
+export GOCACHEPROG="omni-cache gocacheprog"
+
+go test ./...
+```
+
+Optional flags:
+
+- `--cache-dir`: directory for local cache files (defaults to a per-process temp dir under the user cache dir)
+- `--strict`: fail requests on remote cache errors instead of treating them as misses
+- `--socket`: override the default unix socket path (`~/.cirruslabs/omni-cache.sock`)
+- `--host`: connect via TCP instead of the unix socket (required on Windows)
 
 ## Custom HTTP clients
 
