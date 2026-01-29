@@ -57,6 +57,7 @@ Omni Cache exposes a lightweight stats endpoint on the same host as the sidecar.
 - `GET /stats` returns counters and transfer metrics.
 - `DELETE /stats` resets the counters and returns the post-reset snapshot.
 - Responses are `text/plain` by default. Send `Accept: application/json` (or `+json`) to get JSON.
+- Send `Accept: text/vnd.github-actions` to emit GitHub Actions notices (empty response when no cache activity is recorded).
 - This endpoint is especially useful as the final step of a CI pipeline to record cache effectiveness.
 
 Text output example:
