@@ -99,7 +99,6 @@ Add the following build settings to your Xcode project:
 |-----------------------------------------------|-------------------------------------|
 | `COMPILATION_CACHE_ENABLE_CACHING`            | `YES`                               |
 | `COMPILATION_CACHE_ENABLE_PLUGIN`             | `YES`                               |
-| `COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS` | `YES`                               |
 | `COMPILATION_CACHE_REMOTE_SERVICE_PATH`       | `$HOME/.cirruslabs/omni-cache.sock` |
 
 Note: `COMPILATION_CACHE_REMOTE_SERVICE_PATH` and `COMPILATION_CACHE_ENABLE_PLUGIN` must be added as
@@ -111,7 +110,6 @@ Alternatively, pass these settings directly to xcodebuild:
 xcodebuild \
   COMPILATION_CACHE_ENABLE_CACHING=YES \
   COMPILATION_CACHE_ENABLE_PLUGIN=YES \
-  COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
   COMPILATION_CACHE_REMOTE_SERVICE_PATH=$HOME/.cirruslabs/omni-cache.sock \
   ...
 ```
