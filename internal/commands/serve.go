@@ -26,6 +26,7 @@ import (
 const (
 	defaultListenAddr = "localhost:12321"
 	defaultPort       = "12321"
+	defaultAWSRegion  = "us-east-1"
 
 	cacheHostEnv  = "OMNI_CACHE_HOST"
 	bucketEnv     = "OMNI_CACHE_BUCKET"
@@ -183,6 +184,9 @@ func newS3Backend(ctx context.Context, bucketName, prefix, s3Endpoint string) (s
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+	if cfg.Region == "" {
+		cfg.Region = defaultAWSRegion
 	}
 
 	client, err := newS3Client(cfg, s3Endpoint)

@@ -46,7 +46,7 @@ omni-cache dev
   Default: `localhost:12321`. This address is also embedded into GitHub Actions cache v2
   upload/download URLs, so set it to something your clients can reach.
 - S3 credentials and region are resolved via the AWS SDK default chain (`AWS_REGION`,
-  shared config/credentials files, instance roles).
+  shared config/credentials files, instance roles). If no region is set, Omni Cache defaults to `us-east-1`.
 
 CLI flags override env values:
 - `omni-cache sidecar --bucket ... --prefix ... --s3-endpoint ...`
