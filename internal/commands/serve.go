@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/cirruslabs/omni-cache/pkg/protocols/builtin"
@@ -26,9 +27,10 @@ const (
 	defaultListenAddr = "localhost:12321"
 	defaultPort       = "12321"
 
-	cacheHostEnv = "OMNI_CACHE_HOST"
-	bucketEnv    = "OMNI_CACHE_BUCKET"
-	prefixEnv    = "OMNI_CACHE_PREFIX"
+	cacheHostEnv  = "OMNI_CACHE_HOST"
+	bucketEnv     = "OMNI_CACHE_BUCKET"
+	prefixEnv     = "OMNI_CACHE_PREFIX"
+	s3EndpointEnv = "OMNI_CACHE_S3_ENDPOINT"
 
 	shutdownTimeout = 10 * time.Second
 )
@@ -36,12 +38,14 @@ const (
 type sidecarOptions struct {
 	bucketName string
 	prefix     string
+	s3Endpoint string
 }
 
 func newSidecarCmd() *cobra.Command {
 	opts := &sidecarOptions{
 		bucketName: envOrFirst(bucketEnv),
 		prefix:     envOrFirst(prefixEnv),
+		s3Endpoint: envOrFirst(s3EndpointEnv),
 	}
 
 	cmd := &cobra.Command{
@@ -58,6 +62,7 @@ func newSidecarCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.bucketName, "bucket", opts.bucketName, "S3 bucket name")
 	cmd.Flags().StringVar(&opts.prefix, "prefix", opts.prefix, "S3 object key prefix")
+	cmd.Flags().StringVar(&opts.s3Endpoint, "s3-endpoint", opts.s3Endpoint, "S3 endpoint override (e.g. https://s3.example.com)")
 
 	return cmd
 }
@@ -72,13 +77,14 @@ func runSidecar(ctx context.Context, opts *sidecarOptions) error {
 		return fmt.Errorf("missing required bucket: set --bucket or %s", bucketEnv)
 	}
 	prefixValue := strings.TrimSpace(opts.prefix)
+	s3Endpoint := strings.TrimSpace(opts.s3Endpoint)
 
 	listenAddr, err := resolveListenAddr()
 	if err != nil {
 		return err
 	}
 
-	backend, err := newS3Backend(ctx, bucketName, prefixValue)
+	backend, err := newS3Backend(ctx, bucketName, prefixValue, s3Endpoint)
 	if err != nil {
 		return err
 	}
@@ -173,17 +179,38 @@ func resolveListenAddr() (string, error) {
 	return addr, nil
 }
 
-func newS3Backend(ctx context.Context, bucketName, prefix string) (storage.MultipartBlobStorageBackend, error) {
+func newS3Backend(ctx context.Context, bucketName, prefix, s3Endpoint string) (storage.MultipartBlobStorageBackend, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client, err := newS3Client(cfg, s3Endpoint)
+	if err != nil {
+		return nil, err
+	}
 	if prefix == "" {
 		return storage.NewS3Storage(ctx, client, bucketName)
 	}
 	return storage.NewS3Storage(ctx, client, bucketName, prefix)
+}
+
+func newS3Client(cfg aws.Config, s3Endpoint string) (*s3.Client, error) {
+	s3Endpoint = strings.TrimSpace(s3Endpoint)
+	if s3Endpoint == "" {
+		return s3.NewFromConfig(cfg), nil
+	}
+
+	parsed, err := url.Parse(s3Endpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return nil, fmt.Errorf("s3 endpoint must be a full URL, got %q", s3Endpoint)
+	}
+
+	client := s3.NewFromConfig(cfg, func(options *s3.Options) {
+		options.BaseEndpoint = aws.String(s3Endpoint)
+		options.UsePathStyle = true
+	})
+	return client, nil
 }
 
 func listenUnixSocket() (net.Listener, string, func(), error) {

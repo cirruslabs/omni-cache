@@ -40,6 +40,8 @@ omni-cache dev
 
 - `OMNI_CACHE_BUCKET` (required): S3 bucket to store cache blobs.
 - `OMNI_CACHE_PREFIX` (optional): prefix for cache objects.
+- `OMNI_CACHE_S3_ENDPOINT` (optional): override the S3 endpoint URL (must include scheme, e.g. `https://s3.example.com` or `http://localhost:4566`).
+  When set, Omni Cache uses path-style S3 requests for compatibility with S3-compatible endpoints.
 - `OMNI_CACHE_HOST` (optional): listen address. Accepts `host`, `host:port`, or `http(s)://host:port`.
   Default: `localhost:12321`. This address is also embedded into GitHub Actions cache v2
   upload/download URLs, so set it to something your clients can reach.
@@ -47,7 +49,7 @@ omni-cache dev
   shared config/credentials files, instance roles).
 
 CLI flags override env values:
-- `omni-cache sidecar --bucket ... --prefix ...`
+- `omni-cache sidecar --bucket ... --prefix ... --s3-endpoint ...`
 - `omni-cache dev --bucket ... --prefix ... --localstack-image ...`
 
 ## Stats endpoint
