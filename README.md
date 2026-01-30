@@ -22,12 +22,10 @@ on the host network and tools do not need direct S3 credentials.
 Run against your S3 bucket:
 
 ```sh
-export OMNI_CACHE_BUCKET=ci-cache
-export OMNI_CACHE_PREFIX=my-repo
 export AWS_REGION=us-east-1
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
-omni-cache sidecar
+omni-cache sidecar --bucket ci-cache --prefix my-repo
 ```
 
 Quick local test with LocalStack (requires Docker):
@@ -38,19 +36,19 @@ omni-cache dev
 
 ## Configuration
 
-- `OMNI_CACHE_BUCKET` (required): S3 bucket to store cache blobs.
-- `OMNI_CACHE_PREFIX` (optional): prefix for cache objects.
-- `OMNI_CACHE_S3_ENDPOINT` (optional): override the S3 endpoint URL (must include scheme, e.g. `https://s3.example.com` or `http://localhost:4566`).
+- `--bucket` (required): S3 bucket to store cache blobs.
+- `--prefix` (optional): prefix for cache objects.
+- `--s3-endpoint` (optional): override the S3 endpoint URL (must include scheme, e.g. `https://s3.example.com` or `http://localhost:4566`).
   When set, Omni Cache uses path-style S3 requests for compatibility with S3-compatible endpoints.
-- `OMNI_CACHE_HOST` (optional): listen address. Accepts `host`, `host:port`, or `http(s)://host:port`.
+- `--listen-addr` (optional): listen address. Accepts `host`, `host:port`, or `http(s)://host:port`.
   Default: `localhost:12321`. This address is also embedded into GitHub Actions cache v2
   upload/download URLs, so set it to something your clients can reach.
 - S3 credentials and region are resolved via the AWS SDK default chain (`AWS_REGION`,
   shared config/credentials files, instance roles). If no region is set, Omni Cache defaults to `us-east-1`.
 
-CLI flags override env values:
-- `omni-cache sidecar --bucket ... --prefix ... --s3-endpoint ...`
-- `omni-cache dev --bucket ... --prefix ... --localstack-image ...`
+Common examples:
+- `omni-cache sidecar --bucket ... --prefix ... --s3-endpoint ... --listen-addr ...`
+- `omni-cache dev --bucket ... --prefix ... --localstack-image ... --listen-addr ...`
 
 ## Stats endpoint
 

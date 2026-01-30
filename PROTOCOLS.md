@@ -59,13 +59,13 @@ Note: the `network=host` driver option allows BuildKit to reach the sidecar on `
 Use the HTTP cache protocol (`http-cache`) and point Bazel at the Omni Cache HTTP endpoint:
 
 ```sh
-export OMNI_CACHE_HOST=localhost:12321
+export OMNI_CACHE_ADDRESS=localhost:12321
 
 bazel build \
   --spawn_strategy=sandboxed \
   --strategy=Javac=sandboxed \
   --genrule_strategy=sandboxed \
-  --remote_http_cache=http://$OMNI_CACHE_HOST \
+  --remote_http_cache=http://$OMNI_CACHE_ADDRESS \
   //...
 ```
 
@@ -75,7 +75,7 @@ Use the HTTP cache protocol (`http-cache`) and set the remote cache URL to the O
 
 ```groovy
 ext.isCiServer = System.getenv().containsKey("CI")
-ext.buildCacheHost = System.getenv().getOrDefault("OMNI_CACHE_HOST", "localhost:12321")
+ext.buildCacheHost = System.getenv().getOrDefault("OMNI_CACHE_ADDRESS", "localhost:12321")
 
 buildCache {
   local {
@@ -119,6 +119,6 @@ xcodebuild \
 Use the HTTP cache protocol (`http-cache`) and treat cache keys as paths:
 
 ```sh
-export OMNI_CACHE_HOST=localhost:12321
-curl -s -X POST --data-binary @myfolder.tar.gz http://$OMNI_CACHE_HOST/name-key
+export OMNI_CACHE_ADDRESS=localhost:12321
+curl -s -X POST --data-binary @myfolder.tar.gz http://$OMNI_CACHE_ADDRESS/name-key
 ```

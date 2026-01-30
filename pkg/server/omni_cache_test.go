@@ -2,10 +2,13 @@ package server_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -56,13 +59,16 @@ func TestStartDefaultFallsBackWhenPortInUse(t *testing.T) {
 	homeDir := shortTempDir(t)
 	t.Setenv("HOME", homeDir)
 
-	occupiedListener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = occupiedListener.Close()
-	})
-
-	t.Setenv("OMNI_CACHE_HOST", occupiedListener.Addr().String())
+	defaultAddr := "127.0.0.1:12321"
+	occupiedListener, err := net.Listen("tcp", defaultAddr)
+	if err != nil && !isAddrInUseError(err) {
+		t.Skipf("unable to occupy %s: %v", defaultAddr, err)
+	}
+	if occupiedListener != nil {
+		t.Cleanup(func() {
+			_ = occupiedListener.Close()
+		})
+	}
 
 	srv, err := server.StartDefault(context.Background(), nil, testFactory{})
 	require.NoError(t, err)
@@ -72,10 +78,20 @@ func TestStartDefaultFallsBackWhenPortInUse(t *testing.T) {
 		require.NoError(t, srv.Shutdown(context.Background()))
 	})
 
-	require.NotEqual(t, occupiedListener.Addr().String(), srv.Addr)
+	require.NotEqual(t, defaultAddr, srv.Addr)
 
 	host, port, err := net.SplitHostPort(srv.Addr)
 	require.NoError(t, err)
 	require.NotEmpty(t, host)
 	require.NotEqual(t, "0", port)
+}
+
+func isAddrInUseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	return strings.Contains(err.Error(), "address already in use")
 }

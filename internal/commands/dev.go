@@ -29,6 +29,7 @@ const (
 )
 
 type devOptions struct {
+	listenAddr      string
 	bucketName      string
 	prefix          string
 	localstackImage string
@@ -36,12 +37,8 @@ type devOptions struct {
 
 func newDevCmd() *cobra.Command {
 	opts := &devOptions{
-		bucketName:      envOrFirst(bucketEnv),
-		prefix:          envOrFirst(prefixEnv),
+		listenAddr:      defaultListenAddr,
 		localstackImage: defaultLocalstackImage,
-	}
-	if opts.bucketName == "" {
-		opts.bucketName = defaultDevBucketName
 	}
 
 	cmd := &cobra.Command{
@@ -56,6 +53,7 @@ func newDevCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&opts.listenAddr, "listen-addr", opts.listenAddr, "Listen address for HTTP/gRPC (host, host:port, or http(s)://host:port)")
 	cmd.Flags().StringVar(&opts.bucketName, "bucket", opts.bucketName, "S3 bucket name")
 	cmd.Flags().StringVar(&opts.prefix, "prefix", opts.prefix, "S3 object key prefix")
 	cmd.Flags().StringVar(&opts.localstackImage, "localstack-image", opts.localstackImage, "LocalStack container image")
@@ -68,7 +66,7 @@ func runDev(ctx context.Context, opts *devOptions) error {
 		return fmt.Errorf("dev options are nil")
 	}
 
-	listenAddr, err := resolveListenAddr()
+	listenAddr, err := resolveListenAddr(opts.listenAddr)
 	if err != nil {
 		return err
 	}

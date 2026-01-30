@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,13 +32,9 @@ const (
 
 	defaultTCPListenAddr  = "127.0.0.1:12321"
 	fallbackTCPListenAddr = "127.0.0.1:0"
-	defaultPort           = "12321"
 
 	defaultSocketDirName = ".cirruslabs"
 	defaultSocketName    = "omni-cache.sock"
-
-	cacheHostEnv       = "OMNI_CACHE_HOST"
-	legacyCacheHostEnv = "CIRRUS_HTTP_CACHE_HOST"
 )
 
 func StartDefault(ctx context.Context, backend storage.BlobStorageBackend, factories ...protocols.Factory) (*http.Server, error) {
@@ -47,14 +42,10 @@ func StartDefault(ctx context.Context, backend storage.BlobStorageBackend, facto
 		factories = builtin.Factories()
 	}
 
-	listenAddr, fromEnv, err := resolveDefaultListenAddr()
-	if err != nil {
-		return nil, err
-	}
-
+	listenAddr := defaultTCPListenAddr
 	tcpListener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		if fromEnv && !isAddrInUse(err) {
+		if !isAddrInUse(err) {
 			return nil, fmt.Errorf("listen on tcp: %w", err)
 		}
 
@@ -99,35 +90,6 @@ func StartDefault(ctx context.Context, backend storage.BlobStorageBackend, facto
 	srv.RegisterOnShutdown(socketCleanup)
 
 	return srv, nil
-}
-
-func resolveDefaultListenAddr() (string, bool, error) {
-	addr := strings.TrimSpace(os.Getenv(cacheHostEnv))
-	if addr == "" {
-		addr = strings.TrimSpace(os.Getenv(legacyCacheHostEnv))
-	}
-	if addr == "" {
-		return defaultTCPListenAddr, false, nil
-	}
-
-	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
-		parsed, err := url.Parse(addr)
-		if err != nil || parsed.Host == "" {
-			return "", true, fmt.Errorf("%s must be host:port, got %q", cacheHostEnv, addr)
-		}
-		addr = parsed.Host
-	}
-
-	if _, _, err := net.SplitHostPort(addr); err != nil {
-		var addrErr *net.AddrError
-		if errors.As(err, &addrErr) && strings.Contains(addrErr.Err, "missing port in address") {
-			addr = net.JoinHostPort(addr, defaultPort)
-		} else {
-			return "", true, fmt.Errorf("%s must be host:port, got %q", cacheHostEnv, addr)
-		}
-	}
-
-	return addr, true, nil
 }
 
 func fallbackListenAddr(listenAddr string) string {

@@ -28,15 +28,11 @@ const (
 	defaultPort       = "12321"
 	defaultAWSRegion  = "us-east-1"
 
-	cacheHostEnv  = "OMNI_CACHE_HOST"
-	bucketEnv     = "OMNI_CACHE_BUCKET"
-	prefixEnv     = "OMNI_CACHE_PREFIX"
-	s3EndpointEnv = "OMNI_CACHE_S3_ENDPOINT"
-
 	shutdownTimeout = 10 * time.Second
 )
 
 type sidecarOptions struct {
+	listenAddr string
 	bucketName string
 	prefix     string
 	s3Endpoint string
@@ -44,9 +40,7 @@ type sidecarOptions struct {
 
 func newSidecarCmd() *cobra.Command {
 	opts := &sidecarOptions{
-		bucketName: envOrFirst(bucketEnv),
-		prefix:     envOrFirst(prefixEnv),
-		s3Endpoint: envOrFirst(s3EndpointEnv),
+		listenAddr: defaultListenAddr,
 	}
 
 	cmd := &cobra.Command{
@@ -61,6 +55,7 @@ func newSidecarCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&opts.listenAddr, "listen-addr", opts.listenAddr, "Listen address for HTTP/gRPC (host, host:port, or http(s)://host:port)")
 	cmd.Flags().StringVar(&opts.bucketName, "bucket", opts.bucketName, "S3 bucket name")
 	cmd.Flags().StringVar(&opts.prefix, "prefix", opts.prefix, "S3 object key prefix")
 	cmd.Flags().StringVar(&opts.s3Endpoint, "s3-endpoint", opts.s3Endpoint, "S3 endpoint override (e.g. https://s3.example.com)")
@@ -75,12 +70,12 @@ func runSidecar(ctx context.Context, opts *sidecarOptions) error {
 
 	bucketName := strings.TrimSpace(opts.bucketName)
 	if bucketName == "" {
-		return fmt.Errorf("missing required bucket: set --bucket or %s", bucketEnv)
+		return fmt.Errorf("missing required bucket: set --bucket")
 	}
 	prefixValue := strings.TrimSpace(opts.prefix)
 	s3Endpoint := strings.TrimSpace(opts.s3Endpoint)
 
-	listenAddr, err := resolveListenAddr()
+	listenAddr, err := resolveListenAddr(opts.listenAddr)
 	if err != nil {
 		return err
 	}
@@ -157,8 +152,8 @@ func runServer(ctx context.Context, listenAddr, bucketName string, backend stora
 	return nil
 }
 
-func resolveListenAddr() (string, error) {
-	addr := strings.TrimSpace(os.Getenv(cacheHostEnv))
+func resolveListenAddr(rawAddr string) (string, error) {
+	addr := strings.TrimSpace(rawAddr)
 	if addr == "" {
 		return defaultListenAddr, nil
 	}
@@ -166,7 +161,7 @@ func resolveListenAddr() (string, error) {
 	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
 		parsed, err := url.Parse(addr)
 		if err != nil || parsed.Host == "" {
-			return "", fmt.Errorf("%s must be host:port, got %q", cacheHostEnv, addr)
+			return "", fmt.Errorf("listen address must be host:port, got %q", rawAddr)
 		}
 		addr = parsed.Host
 	}
@@ -176,7 +171,7 @@ func resolveListenAddr() (string, error) {
 		if errors.As(err, &addrErr) && strings.Contains(addrErr.Err, "missing port in address") {
 			addr = net.JoinHostPort(addr, defaultPort)
 		} else {
-			return "", fmt.Errorf("%s must be host:port, got %q", cacheHostEnv, addr)
+			return "", fmt.Errorf("listen address must be host:port, got %q", rawAddr)
 		}
 	}
 
@@ -243,13 +238,4 @@ func listenUnixSocket() (net.Listener, string, func(), error) {
 	}
 
 	return listener, socketPath, cleanup, nil
-}
-
-func envOrFirst(keys ...string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
 }
