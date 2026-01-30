@@ -110,6 +110,7 @@ func runServer(ctx context.Context, listenAddr, bucketName string, backend stora
 		_ = tcpListener.Close()
 	}()
 	listeners = append(listeners, tcpListener)
+	actualAddr := tcpListener.Addr().String()
 
 	var socketPath string
 	if runtime.GOOS != "windows" {
@@ -135,9 +136,11 @@ func runServer(ctx context.Context, listenAddr, bucketName string, backend stora
 	}
 
 	if socketPath != "" {
-		slog.InfoContext(ctx, "omni-cache started", "addr", listenAddr, "socket", socketPath, "bucket", bucketName)
+		attrs := []any{"addr", actualAddr, "socket", socketPath, "bucket", bucketName}
+		slog.InfoContext(ctx, "omni-cache started", attrs...)
 	} else {
-		slog.InfoContext(ctx, "omni-cache started", "addr", listenAddr, "bucket", bucketName)
+		attrs := []any{"addr", actualAddr, "bucket", bucketName}
+		slog.InfoContext(ctx, "omni-cache started", attrs...)
 	}
 
 	<-ctx.Done()
