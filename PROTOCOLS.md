@@ -13,14 +13,17 @@ build system or tool and points to the protocol you should use.
 
 ## Docker Layer Caching (GitHub Actions cache)
 
-Use Docker layer caching via BuildKit with the GitHub Actions cache protocol:
+Use Docker layer caching via BuildKit with the GitHub Actions cache protocol.
+Set `OMNI_CACHE_ADDRESS` to the sidecar address (for host networking, usually `127.0.0.1:12321`):
 
-- `gha-cache` (v1): `type=gha,url=http://127.0.0.1:12321/`
-- `gha-cache-v2` (v2): `type=gha,version=2,url_v2=http://127.0.0.1:12321/`
+- `gha-cache` (v1): `type=gha,url=http://$OMNI_CACHE_ADDRESS/`
+- `gha-cache-v2` (v2): `type=gha,version=2,url_v2=http://$OMNI_CACHE_ADDRESS/`
 
 Docker Buildx example (v1):
 
 ```yaml
+env:
+  OMNI_CACHE_ADDRESS: 127.0.0.1:12321
 steps:
   - name: Set up Docker Buildx
     uses: docker/setup-buildx-action@v3
@@ -31,13 +34,15 @@ steps:
     with:
       push: true
       tags: user/app:latest
-      cache-from: type=gha,url=http://127.0.0.1:12321/
-      cache-to: type=gha,url=http://127.0.0.1:12321/,mode=max
+      cache-from: type=gha,url=http://${{ env.OMNI_CACHE_ADDRESS }}/
+      cache-to: type=gha,url=http://${{ env.OMNI_CACHE_ADDRESS }}/,mode=max
 ```
 
 Docker Buildx example (v2):
 
 ```yaml
+env:
+  OMNI_CACHE_ADDRESS: 127.0.0.1:12321
 steps:
   - name: Set up Docker Buildx
     uses: docker/setup-buildx-action@v3
@@ -48,11 +53,11 @@ steps:
     with:
       push: true
       tags: user/app:latest
-      cache-from: type=gha,version=2,url_v2=http://127.0.0.1:12321/
-      cache-to: type=gha,version=2,url_v2=http://127.0.0.1:12321/,mode=max
+      cache-from: type=gha,version=2,url_v2=http://${{ env.OMNI_CACHE_ADDRESS }}/
+      cache-to: type=gha,version=2,url_v2=http://${{ env.OMNI_CACHE_ADDRESS }}/,mode=max
 ```
 
-Note: the `network=host` driver option allows BuildKit to reach the sidecar on `127.0.0.1`.
+Note: the `network=host` driver option allows BuildKit to reach the sidecar on `$OMNI_CACHE_ADDRESS`.
 
 ## Bazel (HTTP cache)
 
