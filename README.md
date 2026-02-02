@@ -12,18 +12,23 @@ At a glance:
 
 How it works (common layouts):
 
-```
-Traditional centralized cache service (bottleneck risk):
+```mermaid
+flowchart LR
+  subgraph Traditional["Traditional centralized cache service (bottleneck risk)"]
+    jobA["job A"] --> cacheSvc["cache service"]
+    jobB["job B"] --> cacheSvc
+    jobC["job C"] --> cacheSvc
+    cacheSvc --> s3a["S3-compatible storage"]
+  end
 
-job A ----\
-job B -----+->  cache service (shared connectivity/throughput to S3 is a bottleneck here)  ->  S3-compatible storage
-job C ----/
-
-Sidecar per job (S3 scalability is the limit):
-
-job A  <->  omni-cache A  \
-job B  <->  omni-cache B   +->  S3-compatible storage
-job C  <->  omni-cache C  /
+  subgraph Sidecar["Sidecar per job (S3 scalability is the limit)"]
+    jobA2["job A"] <---> omniA["omni-cache A"]
+    jobB2["job B"] <---> omniB["omni-cache B"]
+    jobC2["job C"] <---> omniC["omni-cache C"]
+    omniA --> s3b["S3-compatible storage"]
+    omniB --> s3b
+    omniC --> s3b
+  end
 ```
 
 ## Supported protocols & clients
