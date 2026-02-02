@@ -10,25 +10,29 @@ At a glance:
 - Multi-protocol: supports GitHub Actions cache v2 (used by Docker layer caching), Bazel, Gradle,
   Xcode/LLVM, and custom HTTP clients.
 
-How it works (common layouts):
+A traditional centralized cache service, as shown below, becomes a shared bottleneck as workloads scale because all jobs traverse one service and its links to S3:
 
 ```mermaid
 flowchart LR
-  subgraph Traditional["Traditional centralized cache service (bottleneck risk)"]
-    jobA["job A"] --> cacheSvc["cache service"]
-    jobB["job B"] --> cacheSvc
-    jobC["job C"] --> cacheSvc
-    cacheSvc --> s3a["S3-compatible storage"]
-  end
+  jobA["job A"] --> cacheSvc["cache service"]
+  jobB["job B"] --> cacheSvc
+  jobC["job C"] --> cacheSvc
+  cacheSvc --> s3a["S3-compatible storage"]
+```
 
-  subgraph Sidecar["Sidecar per job (S3 scalability is the limit)"]
-    jobA2["job A"] <---> omniA["omni-cache A"]
-    jobB2["job B"] <---> omniB["omni-cache B"]
-    jobC2["job C"] <---> omniC["omni-cache C"]
-    omniA --> s3b["S3-compatible storage"]
-    omniB --> s3b
-    omniC --> s3b
-  end
+Each job sends cache traffic through the centralized service, which can increase latency and amplify data-transfer costs
+(especially egress/cross-AZ) unless it is scaled accordingly.
+
+In a sidecar-per-job approach, each sidecar talks directly to S3, removing the centralized proxy from the hot path:
+
+```mermaid
+flowchart LR
+  jobA2["job A"] <---> omniA["omni-cache A"]
+  jobB2["job B"] <---> omniB["omni-cache B"]
+  jobC2["job C"] <---> omniC["omni-cache C"]
+  omniA --> s3b["S3-compatible storage"]
+  omniB --> s3b
+  omniC --> s3b
 ```
 
 ## Supported protocols & clients
