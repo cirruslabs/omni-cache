@@ -1,18 +1,77 @@
 # Omni Cache Sidecar
 
 Omni Cache is a sidecar daemon that exposes multiple cache protocols on a local endpoint while
-storing blobs in an S3-compatible storage. Run it next to a CI runner or build job so cache traffic stays
-on the host network and tools do not need direct S3 credentials.
+storing blobs in S3-compatible storage. Run it next to a CI runner or build job so cache traffic
+goes directly to object storage instead of a centralized proxy that becomes a bottleneck at scale.
+
+At a glance:
+- CI-agnostic sidecar: run it alongside your job/runner, keep data on your network.
+- S3-backed: works with AWS S3 or any S3-compatible storage.
+- Multi-protocol: supports GitHub Actions cache v2 (used by Docker layer caching), Bazel, Gradle,
+  Xcode/LLVM, and custom HTTP clients.
+
+How it works (common layouts):
+
+```
+Traditional centralized cache service (bottleneck risk):
+
+job A ----\
+job B -----+->  cache service (shared connectivity/throughput to S3 is a bottleneck here)  ->  S3-compatible storage
+job C ----/
+
+Sidecar per job (S3 scalability is the limit):
+
+job A  <->  omni-cache A  \
+job B  <->  omni-cache B   +->  S3-compatible storage
+job C  <->  omni-cache C  /
+```
+
+## Supported protocols & clients
+
+Omni Cache is CI-agnostic: if your runner can reach the sidecar, it works. These are the built-in
+protocols with ready-to-copy examples in `PROTOCOLS.md`:
+
+| Use case / client    | Protocol                        | Example                                                  |
+|----------------------|---------------------------------|----------------------------------------------------------|
+| Docker Layer Caching | GitHub Actions cache v2 (`gha`) | `PROTOCOLS.md#docker-layer-caching-github-actions-cache` |
+| Bazel                | HTTP cache                      | `PROTOCOLS.md#bazel-http-cache`                          |
+| Gradle               | HTTP build cache                | `PROTOCOLS.md#gradle-http-build-cache`                   |
+| Xcode / LLVM         | HTTP cache                      | `PROTOCOLS.md#xcode--llvm-compilation-cache`             |
+| Custom HTTP clients  | HTTP cache                      | `PROTOCOLS.md#custom-http-clients`                       |
 
 ## Installation
 
+Special [Setup Action](https://github.com/cirruslabs/setup-omni-cache) for Github Actions:
+
+```yaml
+steps:
+  - name: Setup omni-cache
+    id: cache
+    uses: cirruslabs/setup-omni-cache@main # or any pinned release
+    with:
+      bucket: ci-omni-cache
+      s3-endpoint: ${{ secrets.S3_ENDPOINT }} # can be R2, for example
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+
+  # Your build steps can now use the cache endpoint
+  - name: Build with cache
+    run: |
+      # Configure your build tool to use the OMNI_CACHE_ADDRESS env var
+      # which is automatically exposed by cirruslabs/setup-omni-cache
+      bazel build //... --remote_cache=http://$OMNI_CACHE_ADDRESS
+```
+
+Alternative way to install in any other environment:
 - [Homebrew](INSTALL.md#homebrew)
 - [Debian-based distributions](INSTALL.md#debian-based-distributions) (Debian, Ubuntu, etc.)
 - [RPM-based distributions](INSTALL.md#rpm-based-distributions) (Fedora, CentOS, etc.)
 - [Prebuilt Binary](INSTALL.md#prebuilt-binary)
 - [Golang](INSTALL.md#golang)
 
-## Sidecar mode
+## Sidecar mode (defaults)
 
 - Listens on a local TCP address (default `localhost:12321`) and, on Unix, a unix socket at
   `~/.cirruslabs/omni-cache.sock`.
@@ -50,6 +109,18 @@ Common examples:
 - `omni-cache sidecar --bucket ... --prefix ... --s3-endpoint ... --listen-addr ...`
 - `omni-cache dev --bucket ... --prefix ... --localstack-image ... --listen-addr ...`
 
+## Dev mode (LocalStack)
+
+Use this when you want to test your project against a local Omni Cache instance without provisioning
+real S3. It starts a LocalStack S3 backend and the sidecar (Docker required):
+
+```sh
+omni-cache dev
+```
+
+Defaults: listens on `localhost:12321`, creates a LocalStack bucket named `omni-cache-dev`. Then point
+your build tool to the sidecar using the protocol examples in `PROTOCOLS.md`.                     |
+
 ## Stats endpoint
 
 Omni Cache exposes a lightweight stats endpoint on the same host as the sidecar.
@@ -76,15 +147,24 @@ JSON fields:
 - `cache_hits`, `cache_misses`, `cache_hit_rate_percent`
 - `downloads` / `uploads`: `count`, `bytes`, `duration_ms`, `avg_bytes`, `avg_duration_ms`, `bytes_per_sec`
 
+## Configuration gotchas
+
+- `--listen-addr` must be reachable by your CI clients (not just `localhost` if the client runs in
+  a different container or machine).
+- Bucket names and prefixes are best kept lowercase to avoid S3 compatibility issues.
+- When using a custom `--s3-endpoint`, ensure the scheme is included (https/http). Omni Cache will
+  switch to path-style addressing for compatibility.
+
+## Security & networking notes
+
+- Omni Cache uses the AWS SDK credential chain (environment variables, shared config, instance
+  roles). Avoid hardcoding credentials in CI logs.
+- The sidecar is typically run on the same host as the build; if you need remote access or TLS
+  termination, place it behind a trusted reverse proxy.
+
 ## Protocols
 
-Omni Cache ships with built-in protocols enabled. See `PROTOCOLS.md` for build-system-focused examples:
-
-- [Docker Layer Caching (via `gha` cache)](PROTOCOLS.md#docker-layer-caching-github-actions-cache)
-- [Bazel (HTTP Cache)](PROTOCOLS.md#bazel-http-cache)
-- [Gradle (HTTP Build Cache)](PROTOCOLS.md#gradle-http-build-cache)
-- [Xcode / LLVM Compilation Cache](PROTOCOLS.md#xcode--llvm-compilation-cache)
-- [Custom HTTP Clients](PROTOCOLS.md#custom-http-clients)
+Omni Cache ships with built-in protocols enabled. See `PROTOCOLS.md` for build-system-focused examples.
 
 Need a custom protocol? Check [existing issues](https://github.com/cirruslabs/omni-cache/issues?q=is%3Aissue%20state%3Aopen%20Support) or create a new one.
 
