@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/cirruslabs/omni-cache/pkg/storage"
 	bytestream "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,10 +37,23 @@ func (s *byteStreamService) Read(req *bytestream.ReadRequest, stream bytestream.
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	if req.GetReadOffset() < 0 {
+		return status.Error(codes.OutOfRange, "read_offset must be non-negative")
+	}
+	if req.GetReadLimit() < 0 {
+		return status.Error(codes.OutOfRange, "read_limit must be non-negative")
+	}
+	if resource.size >= 0 && req.GetReadOffset() > resource.size {
+		return status.Error(codes.OutOfRange, "read_offset exceeds resource size")
+	}
+
 	writer := &bytestreamWriter{stream: stream}
 	if err := s.cas.stream(stream.Context(), assetDigest{Hash: resource.hash, SizeBytes: resource.size}, req.GetReadOffset(), req.GetReadLimit(), writer); err != nil {
 		if err == io.EOF || err == errLimitReached {
 			return nil
+		}
+		if errors.Is(err, storage.ErrCacheNotFound) {
+			return status.Error(codes.NotFound, "blob not found")
 		}
 		return status.Errorf(codes.Internal, "read failed: %v", err)
 	}

@@ -194,12 +194,17 @@ func (s *assetService) PushBlob(ctx context.Context, req *remoteasset.PushBlobRe
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	normalizedFn := normalizeDigestFunction(req.GetDigestFunction())
+	if normalizedFn != remoteexecution.DigestFunction_SHA256 {
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported digest function %v", req.GetDigestFunction())
+	}
+
 	record := assetRecord{
 		Kind:         assetKindBlob,
 		InstanceName: req.GetInstanceName(),
 		Qualifiers:   qualifiers,
 		Digest:       digest,
-		DigestFunc:   int32(normalizeDigestFunction(req.GetDigestFunction())),
+		DigestFunc:   int32(normalizedFn),
 		ExpiresAt:    expireAtFromProto(req.GetExpireAt()),
 		PushedAt:     s.now().UTC(),
 	}
@@ -235,12 +240,17 @@ func (s *assetService) PushDirectory(ctx context.Context, req *remoteasset.PushD
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	normalizedFn := normalizeDigestFunction(req.GetDigestFunction())
+	if normalizedFn != remoteexecution.DigestFunction_SHA256 {
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported digest function %v", req.GetDigestFunction())
+	}
+
 	record := assetRecord{
 		Kind:         assetKindDirectory,
 		InstanceName: req.GetInstanceName(),
 		Qualifiers:   qualifiers,
 		Digest:       digest,
-		DigestFunc:   int32(normalizeDigestFunction(req.GetDigestFunction())),
+		DigestFunc:   int32(normalizedFn),
 		ExpiresAt:    expireAtFromProto(req.GetExpireAt()),
 		PushedAt:     s.now().UTC(),
 	}
