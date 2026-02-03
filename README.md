@@ -4,6 +4,9 @@ Omni Cache is a sidecar daemon that exposes multiple cache protocols on a local 
 storing blobs in S3-compatible storage. Run it next to a CI runner or build job so cache traffic
 goes directly to object storage instead of a centralized proxy that becomes a bottleneck at scale.
 
+Omni Cache has powered billions of caching operations for [Cirrus Runners](https://cirrus-runners.app/)
+and [Cirrus CI](https://cirrus-ci.org/) since 2017.
+
 At a glance:
 - CI-agnostic sidecar: run it alongside your job/runner, keep data on your network.
 - S3-backed: works with AWS S3 or any S3-compatible storage.
