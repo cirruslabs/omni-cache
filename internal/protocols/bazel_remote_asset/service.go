@@ -3,9 +3,11 @@ package bazel_remote_asset
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	remoteasset "github.com/bazelbuild/remote-apis/build/bazel/remote/asset/v1"
+	remoteexecution "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -19,12 +21,19 @@ type assetService struct {
 	remoteasset.UnimplementedPushServer
 
 	store *assetStore
+	cas   *casStore
+	http  *http.Client
 	now   func() time.Time
 }
 
-func newAssetService(store *assetStore) *assetService {
+func newAssetService(store *assetStore, cas *casStore, httpClient *http.Client) *assetService {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	return &assetService{
 		store: store,
+		cas:   cas,
+		http:  httpClient,
 		now:   time.Now,
 	}
 }
@@ -42,6 +51,11 @@ func (s *assetService) FetchBlob(ctx context.Context, req *remoteasset.FetchBlob
 	qualifiers, err := normalizeQualifiers(req.GetQualifiers())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	normalizedFn := normalizeDigestFunction(req.GetDigestFunction())
+	if normalizedFn != remoteexecution.DigestFunction_SHA256 {
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported digest function %v", req.GetDigestFunction())
 	}
 
 	oldestAccepted := time.Time{}
@@ -73,8 +87,43 @@ func (s *assetService) FetchBlob(ctx context.Context, req *remoteasset.FetchBlob
 		}, nil
 	}
 
+	fetchCtx := ctx
+	if req.GetTimeout() != nil {
+		timeout := req.GetTimeout().AsDuration()
+		if timeout > 0 {
+			var cancel context.CancelFunc
+			fetchCtx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+	}
+
+	var lastStatus *statuspb.Status
+	for _, uri := range uris {
+		record, fetchStatus, err := s.fetchFromOrigin(fetchCtx, uri, req.GetInstanceName(), qualifiers, normalizedFn)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "fetch blob failed: %v", err)
+		}
+		if record != nil {
+			stats.Default().RecordCacheMiss()
+			return &remoteasset.FetchBlobResponse{
+				Status:         okStatus(),
+				Uri:            uri,
+				Qualifiers:     qualifiersToProto(record.Qualifiers),
+				ExpiresAt:      record.expiresAtProto(),
+				BlobDigest:     record.Digest.toProto(),
+				DigestFunction: record.digestFunction(),
+			}, nil
+		}
+		if fetchStatus != nil {
+			lastStatus = fetchStatus
+		}
+	}
+
 	stats.Default().RecordCacheMiss()
-	return &remoteasset.FetchBlobResponse{Status: notFoundStatus()}, nil
+	if lastStatus == nil {
+		lastStatus = notFoundStatus()
+	}
+	return &remoteasset.FetchBlobResponse{Status: lastStatus}, nil
 }
 
 func (s *assetService) FetchDirectory(ctx context.Context, req *remoteasset.FetchDirectoryRequest) (*remoteasset.FetchDirectoryResponse, error) {

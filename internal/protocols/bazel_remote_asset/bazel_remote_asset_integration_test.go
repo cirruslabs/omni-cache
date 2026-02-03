@@ -97,7 +97,6 @@ func TestRemoteAssetBazelBuildIntegration(t *testing.T) {
 		"build",
 		"//build/bazel/remote/asset/v1:remote_asset_proto",
 		fmt.Sprintf("--experimental_remote_downloader=%s", downloaderAddr),
-		"--experimental_remote_downloader_local_fallback",
 		"--symlink_prefix=/tmp/bazel-",
 		"--jobs=1",
 		"--local_ram_resources=2048",
@@ -116,6 +115,9 @@ func TestRemoteAssetBazelBuildIntegration(t *testing.T) {
 	snapshot := stats.Default().Snapshot()
 	if snapshot.CacheHits+snapshot.CacheMisses == 0 {
 		t.Fatalf("expected remote asset requests, got none (bazel output: %s)", output)
+	}
+	if snapshot.Uploads.Count == 0 {
+		t.Fatalf("expected CAS uploads, got none (bazel output: %s)", output)
 	}
 }
 
