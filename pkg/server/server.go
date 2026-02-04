@@ -188,8 +188,8 @@ func createMuxAndGRPCServer(host string, backend storage.BlobStorageBackend, fac
 	}.WithDefaults()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /stats", statsHandler)
-	mux.HandleFunc("DELETE /stats", statsResetHandler)
+	mux.HandleFunc("GET /metrics/cache", statsHandler)
+	mux.HandleFunc("DELETE /metrics/cache", statsResetHandler)
 	grpcServer := grpc.NewServer()
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

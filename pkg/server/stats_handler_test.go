@@ -15,7 +15,7 @@ func TestStatsHandlerGithubActionsNoActivity(t *testing.T) {
 		stats.Default().Reset()
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/metrics/cache", nil)
 	req.Header.Set("Accept", "text/vnd.github-actions")
 	recorder := httptest.NewRecorder()
 
@@ -34,7 +34,7 @@ func TestStatsHandlerGithubActionsWithActivity(t *testing.T) {
 	stats.Default().RecordCacheHit()
 	snapshot := stats.Default().Snapshot()
 
-	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/metrics/cache", nil)
 	req.Header.Set("Accept", "text/vnd.github-actions")
 	recorder := httptest.NewRecorder()
 
