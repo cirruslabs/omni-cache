@@ -2,6 +2,7 @@ package stats
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,14 +53,14 @@ func TestFormatGithubActionsSummary(t *testing.T) {
 		},
 	}
 
-	expected := fmt.Sprintf(
-		"::notice title=Omni Cache::Cache hits: %d; cache misses: %d; hit rate: %s; downloads: %s; uploads: %s",
-		snapshot.CacheHits,
-		snapshot.CacheMisses,
-		formatPercent(snapshot.CacheHits, snapshot.CacheHits+snapshot.CacheMisses),
-		formatTransferSummary(snapshot.Downloads),
-		formatTransferSummary(snapshot.Uploads),
-	)
+	expectedMessage := escapeGithubActionsMessage(strings.Join([]string{
+		fmt.Sprintf("Cache hits: %d", snapshot.CacheHits),
+		fmt.Sprintf("Cache misses: %d", snapshot.CacheMisses),
+		fmt.Sprintf("Hit rate: %s", formatPercent(snapshot.CacheHits, snapshot.CacheHits+snapshot.CacheMisses)),
+		fmt.Sprintf("Downloads: %s", formatTransferSummary(snapshot.Downloads)),
+		fmt.Sprintf("Uploads: %s", formatTransferSummary(snapshot.Uploads)),
+	}, "\n"))
+	expected := fmt.Sprintf("::notice title=Omni Cache::%s", expectedMessage)
 
 	require.Equal(t, expected, FormatGithubActionsSummary(snapshot))
 }
