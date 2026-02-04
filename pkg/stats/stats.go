@@ -147,14 +147,27 @@ func (c *Collector) SummaryText() string {
 
 func FormatGithubActionsSummary(snapshot Snapshot) string {
 	totalLookups := snapshot.CacheHits + snapshot.CacheMisses
+	lines := []string{
+		fmt.Sprintf("Cache hits: %d", snapshot.CacheHits),
+		fmt.Sprintf("Cache misses: %d", snapshot.CacheMisses),
+		fmt.Sprintf("Hit rate: %s", formatPercent(snapshot.CacheHits, totalLookups)),
+		fmt.Sprintf("Downloads: %s", formatTransferSummary(snapshot.Downloads)),
+		fmt.Sprintf("Uploads: %s", formatTransferSummary(snapshot.Uploads)),
+	}
+	message := escapeGithubActionsMessage(strings.Join(lines, "\n"))
 	return fmt.Sprintf(
-		"::notice title=Omni Cache::Cache hits: %d; cache misses: %d; hit rate: %s; downloads: %s; uploads: %s",
-		snapshot.CacheHits,
-		snapshot.CacheMisses,
-		formatPercent(snapshot.CacheHits, totalLookups),
-		formatTransferSummary(snapshot.Downloads),
-		formatTransferSummary(snapshot.Uploads),
+		"::notice title=Omni Cache::%s",
+		message,
 	)
+}
+
+func escapeGithubActionsMessage(message string) string {
+	replacer := strings.NewReplacer(
+		"%", "%25",
+		"\r", "%0D",
+		"\n", "%0A",
+	)
+	return replacer.Replace(message)
 }
 
 func (c *transferCounter) record(bytes int64, duration time.Duration) {
