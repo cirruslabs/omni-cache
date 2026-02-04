@@ -140,6 +140,12 @@ Omni Cache exposes a lightweight stats endpoint on the same host as the sidecar.
 - Send `Accept: text/vnd.github-actions` to emit GitHub Actions notices (empty response when no cache activity is recorded).
 - This endpoint is especially useful as the final step of a CI pipeline to record cache effectiveness.
 
+GitHub Actions notice output example (via `curl`):
+
+```sh
+curl -s -H "Accept: application/vnd.github-actions" http://localhost:12321/stats
+```
+
 Text output example:
 
 ```
