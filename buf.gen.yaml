@@ -13,7 +13,3 @@ plugins:
   - local: protoc-gen-twirp
     out: internal/
     opt: paths=source_relative
-    types:
-      - compilation_cache_service.cas.v1.CASDBService
-      - compilation_cache_service.keyvalue.v1.KeyValueDB
-      - github.actions.results.api.v1.CacheService
