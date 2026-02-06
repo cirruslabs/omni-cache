@@ -46,7 +46,7 @@ protocols with ready-to-copy examples in `PROTOCOLS.md`:
 | Use case / client    | Protocol                        | Example                                                  |
 |----------------------|---------------------------------|----------------------------------------------------------|
 | Docker Layer Caching | GitHub Actions cache v2 (`gha`) | `PROTOCOLS.md#docker-layer-caching-github-actions-cache` |
-| Bazel                | HTTP cache                      | `PROTOCOLS.md#bazel-http-cache`                          |
+| Bazel                | HTTP cache / gRPC CAS + Asset   | `PROTOCOLS.md#bazel-http-cache` and `PROTOCOLS.md#bazel-grpc-cas--remote-asset` |
 | Gradle               | HTTP build cache                | `PROTOCOLS.md#gradle-http-build-cache`                   |
 | Xcode / LLVM         | HTTP cache                      | `PROTOCOLS.md#xcode--llvm-compilation-cache`             |
 | Custom HTTP clients  | HTTP cache                      | `PROTOCOLS.md#custom-http-clients`                       |
@@ -73,7 +73,7 @@ steps:
     run: |
       # Configure your build tool to use the OMNI_CACHE_ADDRESS env var
       # which is automatically exposed by cirruslabs/setup-omni-cache
-      bazel build //... --remote_cache=http://$OMNI_CACHE_ADDRESS
+      bazel build //... --remote_cache=grpc://$OMNI_CACHE_ADDRESS --experimental_remote_downloader=grpc://$OMNI_CACHE_ADDRESS --remote_instance_name=omni-cache
 ```
 
 Alternative way to install in any other environment:
