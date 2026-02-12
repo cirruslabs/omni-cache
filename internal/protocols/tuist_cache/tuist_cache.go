@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	tuistopenapi "github.com/cirruslabs/omni-cache/internal/protocols/tuist_cache/openapi"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
@@ -155,7 +156,7 @@ func (t *tuistCache) startMultipart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := t.backend.CacheInfo(r.Context(), key, nil); err == nil {
-		writeJSON(w, http.StatusOK, startMultipartResponse{})
+		writeJSON(w, http.StatusOK, tuistopenapi.StartMultipartUploadResponse{})
 		return
 	} else if !storage.IsNotFoundError(err) {
 		slog.ErrorContext(r.Context(), "tuist multipart preflight failed", "key", key, "err", err)
@@ -171,8 +172,8 @@ func (t *tuistCache) startMultipart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	uploadID := t.uploads.create(key, backendUploadID)
-	writeJSON(w, http.StatusOK, startMultipartResponse{
-		UploadID: &uploadID,
+	writeJSON(w, http.StatusOK, tuistopenapi.StartMultipartUploadResponse{
+		UploadId: &uploadID,
 	})
 }
 
@@ -431,19 +432,11 @@ func requiredQueryParam(r *http.Request, key string) (string, error) {
 	return value, nil
 }
 
-type startMultipartResponse struct {
-	UploadID *string `json:"upload_id"`
-}
-
-type completeMultipartBody struct {
-	Parts []int `json:"parts"`
-}
-
-func parseCompleteBody(body io.Reader) (*completeMultipartBody, error) {
+func parseCompleteBody(body io.Reader) (*tuistopenapi.CompleteMultipartUploadRequest, error) {
 	decoder := json.NewDecoder(body)
 	decoder.DisallowUnknownFields()
 
-	var parsed completeMultipartBody
+	var parsed tuistopenapi.CompleteMultipartUploadRequest
 	if err := decoder.Decode(&parsed); err != nil {
 		return nil, fmt.Errorf("invalid request body")
 	}
