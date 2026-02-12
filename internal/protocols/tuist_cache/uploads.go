@@ -27,7 +27,7 @@ type uploadSession struct {
 	key             string
 	backendUploadID string
 	parts           map[int]storage.MultipartUploadPart
-	createdAt       time.Time
+	lastTouchedAt   time.Time
 }
 
 type completedUpload struct {
@@ -62,7 +62,7 @@ func (s *uploadStore) create(key string, backendUploadID string) string {
 		key:             key,
 		backendUploadID: backendUploadID,
 		parts:           map[int]storage.MultipartUploadPart{},
-		createdAt:       s.now(),
+		lastTouchedAt:   s.now(),
 	}
 
 	return uploadID
@@ -82,6 +82,7 @@ func (s *uploadStore) preparePart(uploadID string, partSize int64) (key string, 
 	if partSize > maxPartSizeBytes {
 		return "", "", errPartTooLarge
 	}
+	session.lastTouchedAt = s.now()
 
 	return session.key, session.backendUploadID, nil
 }
@@ -101,6 +102,7 @@ func (s *uploadStore) setPart(uploadID string, partNumber int, etag string) erro
 		PartNumber: uint32(partNumber),
 		ETag:       etag,
 	}
+	session.lastTouchedAt = s.now()
 	return nil
 }
 
@@ -114,10 +116,6 @@ func (s *uploadStore) complete(uploadID string, requestedParts []int) (*complete
 	if !ok {
 		return nil, errUploadNotFound
 	}
-
-	// Match Tuist behavior: completing removes the upload even if the requested
-	// parts later fail validation.
-	delete(s.sessions, uploadID)
 
 	serverParts := make([]int, 0, len(session.parts))
 	for partNumber := range session.parts {
@@ -137,6 +135,8 @@ func (s *uploadStore) complete(uploadID string, requestedParts []int) (*complete
 		parts = append(parts, part)
 	}
 
+	session.lastTouchedAt = s.now()
+
 	return &completedUpload{
 		key:             session.key,
 		backendUploadID: session.backendUploadID,
@@ -144,11 +144,18 @@ func (s *uploadStore) complete(uploadID string, requestedParts []int) (*complete
 	}, nil
 }
 
+func (s *uploadStore) finalize(uploadID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.sessions, uploadID)
+}
+
 func (s *uploadStore) cleanupExpired() {
 	now := s.now()
 
 	for uploadID, session := range s.sessions {
-		if now.Sub(session.createdAt) > s.ttl {
+		if now.Sub(session.lastTouchedAt) > s.ttl {
 			delete(s.sessions, uploadID)
 		}
 	}

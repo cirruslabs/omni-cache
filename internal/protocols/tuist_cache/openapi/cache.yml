@@ -793,8 +793,7 @@ paths:
       summary: Check if a module cache artifact exists
       tags:
         - ModuleCache
-security:
-  - authorization: []
+security: []
 servers:
   - url: http://localhost:8087
     variables: {}

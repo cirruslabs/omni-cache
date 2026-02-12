@@ -4,17 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	tuistcache "github.com/cirruslabs/omni-cache/internal/protocols/tuist_cache"
 	"github.com/cirruslabs/omni-cache/internal/testutil"
 	"github.com/cirruslabs/omni-cache/pkg/server"
+	"github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,6 +112,7 @@ func TestModuleCacheMultipartErrors(t *testing.T) {
 		strings.NewReader("data"),
 	)
 	require.NoError(t, err)
+	unknownPartReq.Header.Set("Content-Type", "application/octet-stream")
 	unknownPartResp, err := client.Do(unknownPartReq)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, unknownPartResp.StatusCode)
@@ -126,6 +130,7 @@ func TestModuleCacheMultipartErrors(t *testing.T) {
 		bytes.NewReader(tooLargePayload),
 	)
 	require.NoError(t, err)
+	tooLargeReq.Header.Set("Content-Type", "application/octet-stream")
 	tooLargeResp, err := client.Do(tooLargeReq)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusRequestEntityTooLarge, tooLargeResp.StatusCode)
@@ -137,10 +142,48 @@ func TestModuleCacheMultipartErrors(t *testing.T) {
 	completeMultipartUpload(t, client, baseURL, "acme", "ios-app", *mismatchUploadID, []int{2}, http.StatusBadRequest)
 }
 
+func TestUnimplementedEndpointsReturnNotImplemented(t *testing.T) {
+	baseURL := startTuistCacheServer(t)
+	client := &http.Client{}
+
+	values := url.Values{
+		"account_handle": []string{"acme"},
+		"project_handle": []string{"ios-app"},
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, baseURL+"/api/cache/clean?"+values.Encode(), nil)
+	require.NoError(t, err)
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	require.NoError(t, resp.Body.Close())
+}
+
+func TestCompleteCanRetryAfterCommitFailure(t *testing.T) {
+	backend := &failOnceCommitBackend{MultipartBlobStorageBackend: testutil.NewMultipartStorage(t)}
+	baseURL := startTuistCacheServerWithStorage(t, backend)
+	client := &http.Client{}
+
+	query := moduleQuery("acme", "ios-app", "abcd1234", "artifact.zip", "builds")
+	uploadID := startMultipartUpload(t, client, baseURL, query)
+	require.NotNil(t, uploadID)
+
+	uploadPart(t, client, baseURL, "acme", "ios-app", *uploadID, 1, []byte("payload"))
+
+	completeMultipartUpload(t, client, baseURL, "acme", "ios-app", *uploadID, []int{1}, http.StatusInternalServerError)
+	completeMultipartUpload(t, client, baseURL, "acme", "ios-app", *uploadID, []int{1}, http.StatusNoContent)
+}
+
 func startTuistCacheServer(t *testing.T) string {
 	t.Helper()
 
-	stor := testutil.NewMultipartStorage(t)
+	return startTuistCacheServerWithStorage(t, testutil.NewMultipartStorage(t))
+}
+
+func startTuistCacheServerWithStorage(t *testing.T, stor storage.MultipartBlobStorageBackend) string {
+	t.Helper()
+
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
@@ -151,6 +194,34 @@ func startTuistCacheServer(t *testing.T) string {
 	})
 
 	return "http://" + listener.Addr().String()
+}
+
+type failOnceCommitBackend struct {
+	storage.MultipartBlobStorageBackend
+
+	mu      sync.Mutex
+	failed  bool
+	failErr error
+}
+
+func (b *failOnceCommitBackend) CommitMultipartUpload(
+	ctx context.Context,
+	key string,
+	uploadID string,
+	parts []storage.MultipartUploadPart,
+) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.failed {
+		b.failed = true
+		if b.failErr == nil {
+			return errors.New("simulated transient commit failure")
+		}
+		return b.failErr
+	}
+
+	return b.MultipartBlobStorageBackend.CommitMultipartUpload(ctx, key, uploadID, parts)
 }
 
 func moduleQuery(account, project, hash, name, category string) url.Values {
@@ -210,6 +281,7 @@ func uploadPart(
 		bytes.NewReader(data),
 	)
 	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := client.Do(req)
 	require.NoError(t, err)

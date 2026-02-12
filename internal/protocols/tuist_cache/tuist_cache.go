@@ -3,272 +3,302 @@ package tuist_cache
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	tuistopenapi "github.com/cirruslabs/omni-cache/internal/protocols/tuist_cache/openapi"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
-	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
 
 const (
-	moduleBasePath     = "/api/cache/module"
-	moduleArtifactPath = moduleBasePath + "/{id}"
-	moduleStartPath    = moduleBasePath + "/start"
-	modulePartPath     = moduleBasePath + "/part"
-	moduleCompletePath = moduleBasePath + "/complete"
-
 	defaultCacheCategory = "builds"
 
 	maxPartSizeBytes int64 = 10 * 1024 * 1024
 )
 
 type tuistCache struct {
+	tuistopenapi.UnimplementedHandler
+
 	backend    storage.MultipartBlobStorageBackend
 	httpClient *http.Client
-	urlProxy   *urlproxy.Proxy
 	uploads    *uploadStore
+	server     *tuistopenapi.Server
 }
+
+var _ tuistopenapi.Handler = (*tuistCache)(nil)
 
 func newTuistCache(
 	backend storage.MultipartBlobStorageBackend,
 	httpClient *http.Client,
-	urlProxy *urlproxy.Proxy,
-) *tuistCache {
+) (*tuistCache, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	if urlProxy == nil {
-		urlProxy = urlproxy.NewProxy(urlproxy.WithHTTPClient(httpClient))
-	}
 
-	return &tuistCache{
+	cache := &tuistCache{
 		backend:    backend,
 		httpClient: httpClient,
-		urlProxy:   urlProxy,
 		uploads:    newUploadStore(time.Now, 5*time.Minute),
 	}
+
+	server, err := tuistopenapi.NewServer(cache)
+	if err != nil {
+		return nil, err
+	}
+	cache.server = server
+
+	return cache, nil
 }
 
 func (t *tuistCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodHead:
-		t.headModuleArtifact(w, r)
-	case http.MethodGet:
-		t.getModuleArtifact(w, r)
-	case http.MethodPost:
-		switch r.URL.Path {
-		case moduleStartPath:
-			t.startMultipart(w, r)
-		case modulePartPath:
-			t.uploadPart(w, r)
-		case moduleCompletePath:
-			t.completeMultipart(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
+	t.server.ServeHTTP(w, r)
 }
 
-func (t *tuistCache) headModuleArtifact(w http.ResponseWriter, r *http.Request) {
-	request, err := parseModuleArtifactRequest(r)
+func (t *tuistCache) ModuleCacheArtifactExists(
+	ctx context.Context,
+	params tuistopenapi.ModuleCacheArtifactExistsParams,
+) (tuistopenapi.ModuleCacheArtifactExistsRes, error) {
+	key, err := moduleStorageKey(
+		params.AccountHandle,
+		params.ProjectHandle,
+		params.CacheCategory.Or(defaultCacheCategory),
+		params.Hash,
+		params.Name,
+	)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return &tuistopenapi.ModuleCacheArtifactExistsBadRequest{Message: err.Error()}, nil
 	}
 
-	key, err := moduleStorageKey(request.accountHandle, request.projectHandle, request.category, request.hash, request.name)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if _, err := t.backend.CacheInfo(r.Context(), key, nil); err != nil {
+	if _, err := t.backend.CacheInfo(ctx, key, nil); err != nil {
 		if storage.IsNotFoundError(err) {
-			writeError(w, http.StatusNotFound, "artifact not found")
-			return
+			return &tuistopenapi.ModuleCacheArtifactExistsNotFound{Message: "artifact not found"}, nil
 		}
 
-		slog.ErrorContext(r.Context(), "tuist module exists lookup failed", "key", key, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to check artifact existence")
-		return
+		slog.ErrorContext(ctx, "tuist module exists lookup failed", "key", key, "err", err)
+		return nil, err
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	return &tuistopenapi.ModuleCacheArtifactExistsNoContent{}, nil
 }
 
-func (t *tuistCache) getModuleArtifact(w http.ResponseWriter, r *http.Request) {
-	request, err := parseModuleArtifactRequest(r)
+func (t *tuistCache) DownloadModuleCacheArtifact(
+	ctx context.Context,
+	params tuistopenapi.DownloadModuleCacheArtifactParams,
+) (tuistopenapi.DownloadModuleCacheArtifactRes, error) {
+	key, err := moduleStorageKey(
+		params.AccountHandle,
+		params.ProjectHandle,
+		params.CacheCategory.Or(defaultCacheCategory),
+		params.Hash,
+		params.Name,
+	)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return &tuistopenapi.DownloadModuleCacheArtifactBadRequest{Message: err.Error()}, nil
 	}
 
-	key, err := moduleStorageKey(request.accountHandle, request.projectHandle, request.category, request.hash, request.name)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	infos, err := t.backend.DownloadURLs(r.Context(), key)
+	infos, err := t.backend.DownloadURLs(ctx, key)
 	if err != nil {
 		if storage.IsNotFoundError(err) {
-			writeError(w, http.StatusNotFound, "artifact not found")
-			return
+			return &tuistopenapi.DownloadModuleCacheArtifactNotFound{Message: "artifact not found"}, nil
 		}
 
-		slog.ErrorContext(r.Context(), "tuist module download URL generation failed", "key", key, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to prepare artifact download")
-		return
+		slog.ErrorContext(ctx, "tuist module download URL generation failed", "key", key, "err", err)
+		return nil, err
 	}
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	for _, info := range infos {
-		if t.urlProxy.ProxyDownloadFromURL(r.Context(), w, info, key) {
-			return
-		}
+	reader, err := t.openDownloadStream(ctx, infos)
+	if err != nil {
+		slog.ErrorContext(ctx, "tuist module download failed", "key", key, "err", err)
+		return nil, err
+	}
+	if reader == nil {
+		return &tuistopenapi.DownloadModuleCacheArtifactNotFound{Message: "artifact not found"}, nil
 	}
 
-	writeError(w, http.StatusNotFound, "artifact not found")
+	return &tuistopenapi.DownloadModuleCacheArtifactOK{Data: reader}, nil
 }
 
-func (t *tuistCache) startMultipart(w http.ResponseWriter, r *http.Request) {
-	request, err := parseModuleArtifactRequest(r)
+func (t *tuistCache) StartModuleCacheMultipartUpload(
+	ctx context.Context,
+	params tuistopenapi.StartModuleCacheMultipartUploadParams,
+) (tuistopenapi.StartModuleCacheMultipartUploadRes, error) {
+	key, err := moduleStorageKey(
+		params.AccountHandle,
+		params.ProjectHandle,
+		params.CacheCategory.Or(defaultCacheCategory),
+		params.Hash,
+		params.Name,
+	)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return &tuistopenapi.StartModuleCacheMultipartUploadBadRequest{Message: err.Error()}, nil
 	}
 
-	key, err := moduleStorageKey(request.accountHandle, request.projectHandle, request.category, request.hash, request.name)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if _, err := t.backend.CacheInfo(r.Context(), key, nil); err == nil {
-		writeJSON(w, http.StatusOK, tuistopenapi.StartMultipartUploadResponse{})
-		return
+	if _, err := t.backend.CacheInfo(ctx, key, nil); err == nil {
+		uploadID := tuistopenapi.NilString{}
+		uploadID.SetToNull()
+		return &tuistopenapi.StartMultipartUploadResponse{UploadID: uploadID}, nil
 	} else if !storage.IsNotFoundError(err) {
-		slog.ErrorContext(r.Context(), "tuist multipart preflight failed", "key", key, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to start multipart upload")
-		return
+		slog.ErrorContext(ctx, "tuist multipart preflight failed", "key", key, "err", err)
+		return nil, err
 	}
 
-	backendUploadID, err := t.backend.CreateMultipartUpload(r.Context(), key, nil)
+	backendUploadID, err := t.backend.CreateMultipartUpload(ctx, key, nil)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "tuist create multipart upload failed", "key", key, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to start multipart upload")
-		return
+		slog.ErrorContext(ctx, "tuist create multipart upload failed", "key", key, "err", err)
+		return nil, err
 	}
 
 	uploadID := t.uploads.create(key, backendUploadID)
-	writeJSON(w, http.StatusOK, tuistopenapi.StartMultipartUploadResponse{
-		UploadId: &uploadID,
-	})
+	return &tuistopenapi.StartMultipartUploadResponse{
+		UploadID: tuistopenapi.NewNilString(uploadID),
+	}, nil
 }
 
-func (t *tuistCache) uploadPart(w http.ResponseWriter, r *http.Request) {
-	request, err := parseUploadPartRequest(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+func (t *tuistCache) UploadModuleCachePart(
+	ctx context.Context,
+	req tuistopenapi.UploadModuleCachePartReq,
+	params tuistopenapi.UploadModuleCachePartParams,
+) (tuistopenapi.UploadModuleCachePartRes, error) {
+	if params.PartNumber <= 0 {
+		return &tuistopenapi.UploadModuleCachePartBadRequest{Message: "part_number must be a positive integer"}, nil
 	}
 
-	partData, err := readPartBody(r, maxPartSizeBytes)
+	partData, err := readPartBody(req.Data, maxPartSizeBytes)
 	if err != nil {
 		switch {
 		case errors.Is(err, errPartTooLarge):
-			writeError(w, http.StatusRequestEntityTooLarge, "part exceeds 10MB limit")
+			return &tuistopenapi.UploadModuleCachePartRequestEntityTooLarge{Message: "part exceeds 10MB limit"}, nil
 		case errors.Is(err, context.DeadlineExceeded):
-			writeError(w, http.StatusRequestTimeout, "request body read timed out")
+			return &tuistopenapi.UploadModuleCachePartRequestTimeout{Message: "request body read timed out"}, nil
 		default:
-			slog.ErrorContext(r.Context(), "tuist read multipart part failed", "uploadID", request.uploadID, "partNumber", request.partNumber, "err", err)
-			writeError(w, http.StatusBadRequest, "failed to read part body")
+			slog.ErrorContext(ctx, "tuist read multipart part failed", "uploadID", params.UploadID, "partNumber", params.PartNumber, "err", err)
+			return &tuistopenapi.UploadModuleCachePartBadRequest{Message: "failed to read part body"}, nil
 		}
-		return
 	}
 
-	key, backendUploadID, err := t.uploads.preparePart(request.uploadID, int64(len(partData)))
+	key, backendUploadID, err := t.uploads.preparePart(params.UploadID, int64(len(partData)))
 	if err != nil {
 		switch {
 		case errors.Is(err, errUploadNotFound):
-			writeError(w, http.StatusNotFound, "upload not found")
+			return &tuistopenapi.UploadModuleCachePartNotFound{Message: "upload not found"}, nil
 		case errors.Is(err, errPartTooLarge):
-			writeError(w, http.StatusRequestEntityTooLarge, "part exceeds 10MB limit")
+			return &tuistopenapi.UploadModuleCachePartRequestEntityTooLarge{Message: "part exceeds 10MB limit"}, nil
 		default:
-			slog.ErrorContext(r.Context(), "tuist prepare multipart part failed", "uploadID", request.uploadID, "partNumber", request.partNumber, "err", err)
-			writeError(w, http.StatusInternalServerError, "failed to upload part")
+			slog.ErrorContext(ctx, "tuist prepare multipart part failed", "uploadID", params.UploadID, "partNumber", params.PartNumber, "err", err)
+			return nil, err
 		}
-		return
 	}
 
-	etag, err := t.uploadPartToBackend(r.Context(), key, backendUploadID, request.partNumber, partData)
+	etag, err := t.uploadPartToBackend(ctx, key, backendUploadID, params.PartNumber, partData)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "tuist upload multipart part failed", "uploadID", request.uploadID, "partNumber", request.partNumber, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to upload part")
-		return
+		slog.ErrorContext(ctx, "tuist upload multipart part failed", "uploadID", params.UploadID, "partNumber", params.PartNumber, "err", err)
+		return nil, err
 	}
 
-	if err := t.uploads.setPart(request.uploadID, request.partNumber, etag); err != nil {
+	if err := t.uploads.setPart(params.UploadID, params.PartNumber, etag); err != nil {
 		switch {
 		case errors.Is(err, errUploadNotFound):
-			writeError(w, http.StatusNotFound, "upload not found")
+			return &tuistopenapi.UploadModuleCachePartNotFound{Message: "upload not found"}, nil
 		default:
-			slog.ErrorContext(r.Context(), "tuist record multipart part failed", "uploadID", request.uploadID, "partNumber", request.partNumber, "err", err)
-			writeError(w, http.StatusInternalServerError, "failed to upload part")
+			slog.ErrorContext(ctx, "tuist record multipart part failed", "uploadID", params.UploadID, "partNumber", params.PartNumber, "err", err)
+			return nil, err
 		}
-		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	return &tuistopenapi.UploadModuleCachePartNoContent{}, nil
 }
 
-func (t *tuistCache) completeMultipart(w http.ResponseWriter, r *http.Request) {
-	request, err := parseCompleteMultipartRequest(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+func (t *tuistCache) CompleteModuleCacheMultipartUpload(
+	ctx context.Context,
+	req *tuistopenapi.CompleteMultipartUploadRequest,
+	params tuistopenapi.CompleteModuleCacheMultipartUploadParams,
+) (tuistopenapi.CompleteModuleCacheMultipartUploadRes, error) {
+	if req == nil || req.Parts == nil {
+		return &tuistopenapi.CompleteModuleCacheMultipartUploadBadRequest{Message: "request body must include parts"}, nil
 	}
-
-	body, err := parseCompleteBody(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	for _, part := range req.Parts {
+		if part <= 0 {
+			return &tuistopenapi.CompleteModuleCacheMultipartUploadBadRequest{Message: "parts must contain positive integers"}, nil
+		}
 	}
 
 	// Tuist sends only ordered part numbers here; key/backend upload ID and part
 	// ETags are resolved from the in-memory upload session.
-	completion, err := t.uploads.complete(request.uploadID, body.Parts)
+	completion, err := t.uploads.complete(params.UploadID, req.Parts)
 	if err != nil {
 		switch {
 		case errors.Is(err, errUploadNotFound):
-			writeError(w, http.StatusNotFound, "upload not found")
+			return &tuistopenapi.CompleteModuleCacheMultipartUploadNotFound{Message: "upload not found"}, nil
 		case errors.Is(err, errPartsMismatch):
-			writeError(w, http.StatusBadRequest, "parts mismatch or missing parts")
+			return &tuistopenapi.CompleteModuleCacheMultipartUploadBadRequest{Message: "parts mismatch or missing parts"}, nil
 		default:
-			slog.ErrorContext(r.Context(), "tuist complete multipart pre-commit failed", "uploadID", request.uploadID, "err", err)
-			writeError(w, http.StatusInternalServerError, "failed to complete multipart upload")
+			slog.ErrorContext(ctx, "tuist complete multipart pre-commit failed", "uploadID", params.UploadID, "err", err)
+			return &tuistopenapi.CompleteModuleCacheMultipartUploadInternalServerError{Message: "failed to complete multipart upload"}, nil
 		}
-		return
 	}
 
-	if err := t.backend.CommitMultipartUpload(r.Context(), completion.key, completion.backendUploadID, completion.parts); err != nil {
-		slog.ErrorContext(r.Context(), "tuist complete multipart commit failed", "uploadID", request.uploadID, "key", completion.key, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to complete multipart upload")
-		return
+	if err := t.backend.CommitMultipartUpload(ctx, completion.key, completion.backendUploadID, completion.parts); err != nil {
+		slog.ErrorContext(ctx, "tuist complete multipart commit failed", "uploadID", params.UploadID, "key", completion.key, "err", err)
+		return &tuistopenapi.CompleteModuleCacheMultipartUploadInternalServerError{Message: "failed to complete multipart upload"}, nil
+	}
+	t.uploads.finalize(params.UploadID)
+
+	return &tuistopenapi.CompleteModuleCacheMultipartUploadNoContent{}, nil
+}
+
+func (t *tuistCache) openDownloadStream(ctx context.Context, infos []*storage.URLInfo) (io.ReadCloser, error) {
+	var lastErr error
+
+	for _, info := range infos {
+		body, status, err := t.fetchFromDownloadURL(ctx, info)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		switch status {
+		case http.StatusOK:
+			return body, nil
+		case http.StatusNotFound:
+			continue
+		default:
+			lastErr = fmt.Errorf("download returned status %d", status)
+		}
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	if lastErr != nil {
+		return nil, lastErr
+	}
+
+	return nil, nil
+}
+
+func (t *tuistCache) fetchFromDownloadURL(ctx context.Context, info *storage.URLInfo) (io.ReadCloser, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.URL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	for k, v := range info.ExtraHeaders {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		return resp.Body, resp.StatusCode, nil
+	}
+
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	_ = resp.Body.Close()
+	return nil, resp.StatusCode, nil
 }
 
 func (t *tuistCache) uploadPartToBackend(
@@ -331,140 +361,14 @@ func moduleStorageKey(accountHandle, projectHandle, category, hash, name string)
 	), nil
 }
 
-type moduleArtifactRequest struct {
-	accountHandle string
-	projectHandle string
-	hash          string
-	name          string
-	category      string
-}
-
-func parseModuleArtifactRequest(r *http.Request) (*moduleArtifactRequest, error) {
-	accountHandle, err := requiredQueryParam(r, "account_handle")
-	if err != nil {
-		return nil, err
-	}
-	projectHandle, err := requiredQueryParam(r, "project_handle")
-	if err != nil {
-		return nil, err
-	}
-	hash, err := requiredQueryParam(r, "hash")
-	if err != nil {
-		return nil, err
-	}
-	name, err := requiredQueryParam(r, "name")
-	if err != nil {
-		return nil, err
-	}
-
-	category := strings.TrimSpace(r.URL.Query().Get("cache_category"))
-	if category == "" {
-		category = defaultCacheCategory
-	}
-
-	return &moduleArtifactRequest{
-		accountHandle: accountHandle,
-		projectHandle: projectHandle,
-		hash:          hash,
-		name:          name,
-		category:      category,
-	}, nil
-}
-
-type uploadPartRequest struct {
-	uploadID   string
-	partNumber int
-}
-
-func parseUploadPartRequest(r *http.Request) (*uploadPartRequest, error) {
-	if _, err := requiredQueryParam(r, "account_handle"); err != nil {
-		return nil, err
-	}
-	if _, err := requiredQueryParam(r, "project_handle"); err != nil {
-		return nil, err
-	}
-
-	uploadID, err := requiredQueryParam(r, "upload_id")
-	if err != nil {
-		return nil, err
-	}
-
-	partNumberRaw, err := requiredQueryParam(r, "part_number")
-	if err != nil {
-		return nil, err
-	}
-	partNumber, err := strconv.Atoi(partNumberRaw)
-	if err != nil || partNumber <= 0 {
-		return nil, fmt.Errorf("part_number must be a positive integer")
-	}
-
-	return &uploadPartRequest{
-		uploadID:   uploadID,
-		partNumber: partNumber,
-	}, nil
-}
-
-type completeMultipartRequest struct {
-	uploadID string
-}
-
-func parseCompleteMultipartRequest(r *http.Request) (*completeMultipartRequest, error) {
-	if _, err := requiredQueryParam(r, "account_handle"); err != nil {
-		return nil, err
-	}
-	if _, err := requiredQueryParam(r, "project_handle"); err != nil {
-		return nil, err
-	}
-
-	uploadID, err := requiredQueryParam(r, "upload_id")
-	if err != nil {
-		return nil, err
-	}
-
-	return &completeMultipartRequest{uploadID: uploadID}, nil
-}
-
-func requiredQueryParam(r *http.Request, key string) (string, error) {
-	value := r.URL.Query().Get(key)
-	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("missing required query parameter %q", key)
-	}
-	return value, nil
-}
-
-func parseCompleteBody(body io.Reader) (*tuistopenapi.CompleteMultipartUploadRequest, error) {
-	decoder := json.NewDecoder(body)
-	decoder.DisallowUnknownFields()
-
-	var parsed tuistopenapi.CompleteMultipartUploadRequest
-	if err := decoder.Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("invalid request body")
-	}
-	if parsed.Parts == nil {
-		return nil, fmt.Errorf("request body must include parts")
-	}
-	for _, part := range parsed.Parts {
-		if part <= 0 {
-			return nil, fmt.Errorf("parts must contain positive integers")
-		}
-	}
-
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("invalid request body")
-	}
-
-	return &parsed, nil
-}
-
 var errPartTooLarge = errors.New("part too large")
 
-func readPartBody(r *http.Request, maxBytes int64) ([]byte, error) {
-	if r.ContentLength > maxBytes {
-		return nil, errPartTooLarge
+func readPartBody(body io.Reader, maxBytes int64) ([]byte, error) {
+	if body == nil {
+		return nil, nil
 	}
 
-	data, err := io.ReadAll(io.LimitReader(r.Body, maxBytes+1))
+	data, err := io.ReadAll(io.LimitReader(body, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
@@ -472,22 +376,6 @@ func readPartBody(r *http.Request, maxBytes int64) ([]byte, error) {
 		return nil, errPartTooLarge
 	}
 	return data, nil
-}
-
-type errorResponse struct {
-	Message string `json:"message"`
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, errorResponse{Message: message})
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		slog.Error("failed to encode tuist cache response", "err", err)
-	}
 }
 
 func equalPartNumbers(lhs []int, rhs []int) bool {

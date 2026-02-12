@@ -29,8 +29,13 @@ func (Factory) New(deps protocols.Dependencies) (protocols.Protocol, error) {
 		return nil, fmt.Errorf("tuist-cache requires multipart storage backend")
 	}
 
+	cache, err := newTuistCache(backend, deps.HTTP)
+	if err != nil {
+		return nil, err
+	}
+
 	return &protocol{
-		cache: newTuistCache(backend, deps.HTTP, deps.URLProxy),
+		cache: cache,
 	}, nil
 }
 
@@ -44,10 +49,14 @@ func (p *protocol) Register(registrar *protocols.Registrar) error {
 		return fmt.Errorf("http mux is nil")
 	}
 
-	mux.Handle("HEAD "+moduleArtifactPath, p.cache)
-	mux.Handle("GET "+moduleArtifactPath, p.cache)
-	mux.Handle("POST "+moduleStartPath, p.cache)
-	mux.Handle("POST "+modulePartPath, p.cache)
-	mux.Handle("POST "+moduleCompletePath, p.cache)
+	for _, method := range []string{
+		"DELETE",
+		"GET",
+		"HEAD",
+		"POST",
+		"PUT",
+	} {
+		mux.Handle(method+" /api/cache/", p.cache)
+	}
 	return nil
 }
