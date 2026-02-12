@@ -8,13 +8,13 @@ import (
 )
 
 // Factory wires the Tuist module cache HTTP protocol.
-// Endpoints:
+// Endpoints (behind the /tuist prefix):
 //
-//	HEAD /api/cache/module/{id}
-//	GET /api/cache/module/{id}
-//	POST /api/cache/module/start
-//	POST /api/cache/module/part
-//	POST /api/cache/module/complete
+//	HEAD /tuist/api/cache/module/{id}
+//	GET /tuist/api/cache/module/{id}
+//	POST /tuist/api/cache/module/start
+//	POST /tuist/api/cache/module/part
+//	POST /tuist/api/cache/module/complete
 type Factory struct{}
 
 func (Factory) ID() string {
@@ -56,7 +56,7 @@ func (p *protocol) Register(registrar *protocols.Registrar) error {
 		"POST",
 		"PUT",
 	} {
-		mux.Handle(method+" /api/cache/", p.cache)
+		mux.Handle(method+" /tuist/api/cache/", p.cache)
 	}
 	return nil
 }

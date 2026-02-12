@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	moduleBasePath     = "/api/cache/module"
+	tuistPrefix        = "/tuist"
+	moduleBasePath     = tuistPrefix + "/api/cache/module"
 	moduleStartPath    = moduleBasePath + "/start"
 	modulePartPath     = moduleBasePath + "/part"
 	moduleCompletePath = moduleBasePath + "/complete"
@@ -151,7 +152,7 @@ func TestUnimplementedEndpointsReturnNotImplemented(t *testing.T) {
 		"project_handle": []string{"ios-app"},
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, baseURL+"/api/cache/clean?"+values.Encode(), nil)
+	req, err := http.NewRequest(http.MethodDelete, baseURL+tuistPrefix+"/api/cache/clean?"+values.Encode(), nil)
 	require.NoError(t, err)
 
 	resp, err := client.Do(req)

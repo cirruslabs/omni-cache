@@ -1,7 +1,9 @@
 package tuist_cache
 
 import (
+	"cmp"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -134,6 +136,11 @@ func (s *uploadStore) complete(uploadID string, requestedParts []int) (*complete
 		}
 		parts = append(parts, part)
 	}
+
+	// S3 requires parts in ascending order.
+	slices.SortFunc(parts, func(a, b storage.MultipartUploadPart) int {
+		return cmp.Compare(a.PartNumber, b.PartNumber)
+	})
 
 	session.lastTouchedAt = s.now()
 

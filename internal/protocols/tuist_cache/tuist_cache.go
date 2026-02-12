@@ -47,7 +47,7 @@ func newTuistCache(
 		uploads:    newUploadStore(time.Now, 5*time.Minute),
 	}
 
-	server, err := tuistopenapi.NewServer(cache)
+	server, err := tuistopenapi.NewServer(cache, tuistopenapi.WithPathPrefix("/tuist"))
 	if err != nil {
 		return nil, err
 	}

@@ -142,22 +142,22 @@ xcodebuild \
 
 ## Tuist Module Cache
 
-Use Tuist's module cache API (`/api/cache/module/*`) exposed by Omni Cache.
+Use Tuist's module cache API exposed by Omni Cache under the `/tuist` prefix.
 
 Set the endpoint override so Tuist talks to your local sidecar:
 
 ```sh
 export OMNI_CACHE_ADDRESS=localhost:12321
-export TUIST_CACHE_ENDPOINT=http://$OMNI_CACHE_ADDRESS
+export TUIST_CACHE_ENDPOINT=http://$OMNI_CACHE_ADDRESS/tuist
 ```
 
 Tuist will automatically use the following endpoints on that host:
 
-- `HEAD /api/cache/module/{id}`
-- `GET /api/cache/module/{id}`
-- `POST /api/cache/module/start`
-- `POST /api/cache/module/part`
-- `POST /api/cache/module/complete`
+- `HEAD /tuist/api/cache/module/{id}`
+- `GET /tuist/api/cache/module/{id}`
+- `POST /tuist/api/cache/module/start`
+- `POST /tuist/api/cache/module/part`
+- `POST /tuist/api/cache/module/complete`
 
 ## Custom HTTP clients
 
