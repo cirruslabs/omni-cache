@@ -122,7 +122,11 @@ func (s *casStore) DownloadToWriter(ctx context.Context, instanceName string, di
 
 	var lastErr error
 	for _, info := range infos {
-		if err := s.proxy.DownloadToWriter(ctx, info, key, w); err == nil {
+		var retryBuffer bytes.Buffer
+		if err := s.proxy.DownloadToWriter(ctx, info, key, &retryBuffer); err == nil {
+			if _, err := io.Copy(w, &retryBuffer); err != nil {
+				return err
+			}
 			return nil
 		} else {
 			lastErr = err

@@ -47,35 +47,19 @@ func parseReadResourceName(resourceName string) (*parsedBlobResource, error) {
 
 func parseWriteResourceName(resourceName string) (*parsedBlobResource, error) {
 	segments := splitResourceName(resourceName)
-	if len(segments) < 4 {
+	if len(segments) < 5 {
 		return nil, fmt.Errorf("invalid write resource name %q", resourceName)
 	}
 
-	uploadsIndex := -1
-	for i, segment := range segments {
-		if segment == "uploads" {
-			uploadsIndex = i
-			break
-		}
-	}
-	if uploadsIndex == -1 {
+	uploadsIndex, compressed, err := locateWriteUploads(segments)
+	if err != nil {
 		return nil, fmt.Errorf("invalid write resource name %q", resourceName)
 	}
-
-	afterUploads := segments[uploadsIndex+1:]
-	if len(afterUploads) < 3 {
-		return nil, fmt.Errorf("invalid write resource name %q", resourceName)
-	}
-
-	resourceKind := afterUploads[1]
-	if resourceKind == "compressed-blobs" {
+	if compressed {
 		return nil, errCompressedBlobsUnsupported
 	}
-	if resourceKind != "blobs" {
-		return nil, fmt.Errorf("invalid write resource name %q", resourceName)
-	}
 
-	digest, err := parseResourceDigest(afterUploads[2:])
+	digest, err := parseResourceDigest(segments[uploadsIndex+3:])
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +80,8 @@ func splitResourceName(resourceName string) []string {
 }
 
 func locateBlobKind(segments []string) (index int, compressed bool, err error) {
-	for i, segment := range segments {
+	for i := len(segments) - 1; i >= 0; i-- {
+		segment := segments[i]
 		switch segment {
 		case "blobs":
 			return i, false, nil
@@ -105,6 +90,25 @@ func locateBlobKind(segments []string) (index int, compressed bool, err error) {
 		}
 	}
 	return -1, false, fmt.Errorf("resource name does not reference blobs")
+}
+
+func locateWriteUploads(segments []string) (uploadsIndex int, compressed bool, err error) {
+	// Write resource names are: {instance_name}/uploads/{uuid}/{kind}/...
+	// Search from the end so instance_name can contain both "uploads" and "blobs".
+	for i := len(segments) - 1; i >= 2; i-- {
+		switch segments[i] {
+		case "blobs":
+			if segments[i-2] == "uploads" {
+				return i - 2, false, nil
+			}
+		case "compressed-blobs":
+			if segments[i-2] == "uploads" {
+				return i - 2, true, nil
+			}
+		}
+	}
+
+	return -1, false, fmt.Errorf("resource name does not reference uploads")
 }
 
 func parseResourceDigest(rest []string) (*remoteexecution.Digest, error) {

@@ -15,7 +15,25 @@ func TestParseReadResourceName(t *testing.T) {
 	require.EqualValues(t, 0, parsed.digest.GetSizeBytes())
 }
 
+func TestParseReadResourceNameUsesTrailingBlobMarker(t *testing.T) {
+	resource := "team/blobs/cache/blobs/" + emptySHA256Hash + "/0"
+	parsed, err := parseReadResourceName(resource)
+	require.NoError(t, err)
+	require.Equal(t, "team/blobs/cache", parsed.instanceName)
+	require.Equal(t, emptySHA256Hash, parsed.digest.GetHash())
+	require.EqualValues(t, 0, parsed.digest.GetSizeBytes())
+}
+
 func TestParseWriteResourceNameRejectsCompressed(t *testing.T) {
 	_, err := parseWriteResourceName("instance/uploads/u/compressed-blobs/zstd/" + emptySHA256Hash + "/0")
 	require.ErrorIs(t, err, errCompressedBlobsUnsupported)
+}
+
+func TestParseWriteResourceNameUsesTrailingUploadsMarker(t *testing.T) {
+	resource := "org/uploads/cache/uploads/u-1/blobs/" + emptySHA256Hash + "/0"
+	parsed, err := parseWriteResourceName(resource)
+	require.NoError(t, err)
+	require.Equal(t, "org/uploads/cache", parsed.instanceName)
+	require.Equal(t, emptySHA256Hash, parsed.digest.GetHash())
+	require.EqualValues(t, 0, parsed.digest.GetSizeBytes())
 }
