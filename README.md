@@ -11,7 +11,7 @@ At a glance:
 - CI-agnostic sidecar: run it alongside your job/runner, keep data on your network.
 - S3-backed: works with AWS S3 or any S3-compatible storage.
 - Multi-protocol: supports GitHub Actions cache v2 (used by Docker layer caching), Bazel, Gradle,
-  Xcode/LLVM, and custom HTTP clients.
+  Xcode/LLVM, Tuist module cache, and custom HTTP clients.
 
 A traditional centralized cache service, as shown below, becomes a shared bottleneck as workloads scale because all jobs traverse one service and its links to S3:
 
@@ -49,6 +49,7 @@ protocols with ready-to-copy examples in `PROTOCOLS.md`:
 | Bazel                | HTTP cache / gRPC CAS + Asset   | `PROTOCOLS.md#bazel-http-cache` and `PROTOCOLS.md#bazel-grpc-cas--remote-asset` |
 | Gradle               | HTTP build cache                | `PROTOCOLS.md#gradle-http-build-cache`                   |
 | Xcode / LLVM         | HTTP cache                      | `PROTOCOLS.md#xcode--llvm-compilation-cache`             |
+| Tuist                | Module cache API                | `PROTOCOLS.md#tuist-module-cache`                        |
 | Custom HTTP clients  | HTTP cache                      | `PROTOCOLS.md#custom-http-clients`                       |
 
 ## Installation

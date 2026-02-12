@@ -10,6 +10,7 @@ build system or tool and points to the protocol you should use.
 - [Bazel (gRPC CAS + Remote Asset)](#bazel-grpc-cas--remote-asset)
 - [Gradle (HTTP build cache)](#gradle-http-build-cache)
 - [Xcode / LLVM compilation cache](#xcode--llvm-compilation-cache)
+- [Tuist module cache](#tuist-module-cache)
 - [Custom HTTP clients](#custom-http-clients)
 
 ## Docker Layer Caching (GitHub Actions cache)
@@ -138,6 +139,25 @@ xcodebuild \
   COMPILATION_CACHE_REMOTE_SERVICE_PATH=$HOME/.cirruslabs/omni-cache.sock \
   ...
 ```
+
+## Tuist Module Cache
+
+Use Tuist's module cache API (`/api/cache/module/*`) exposed by Omni Cache.
+
+Set the endpoint override so Tuist talks to your local sidecar:
+
+```sh
+export OMNI_CACHE_ADDRESS=localhost:12321
+export TUIST_CACHE_ENDPOINT=http://$OMNI_CACHE_ADDRESS
+```
+
+Tuist will automatically use the following endpoints on that host:
+
+- `HEAD /api/cache/module/{id}`
+- `GET /api/cache/module/{id}`
+- `POST /api/cache/module/start`
+- `POST /api/cache/module/part`
+- `POST /api/cache/module/complete`
 
 ## Custom HTTP clients
 
