@@ -7,6 +7,7 @@ build system or tool and points to the protocol you should use.
 
 - [Docker Layer Caching (GitHub Actions cache)](#docker-layer-caching-github-actions-cache)
 - [Bazel (HTTP cache)](#bazel-http-cache)
+- [Bazel (gRPC CAS + Remote Asset)](#bazel-grpc-cas--remote-asset)
 - [Gradle (HTTP build cache)](#gradle-http-build-cache)
 - [Xcode / LLVM compilation cache](#xcode--llvm-compilation-cache)
 - [Custom HTTP clients](#custom-http-clients)
@@ -73,6 +74,25 @@ bazel build \
   --remote_http_cache=http://$OMNI_CACHE_ADDRESS \
   //...
 ```
+
+## Bazel (gRPC CAS + Remote Asset)
+
+Use the Bazel remote cache/downloader gRPC endpoint (`bazel-remote`) and point Bazel at Omni Cache:
+
+```sh
+export OMNI_CACHE_ADDRESS=localhost:12321
+
+bazel build \
+  --remote_cache=grpc://$OMNI_CACHE_ADDRESS \
+  --experimental_remote_downloader=grpc://$OMNI_CACHE_ADDRESS \
+  --remote_instance_name=omni-cache \
+  //...
+```
+
+Current limits:
+- Digest function: SHA256 only.
+- Remote Asset origin fetch: `http`/`https` only.
+- Remote Asset directory APIs are not implemented yet (`FetchDirectory`/`PushDirectory`).
 
 ## Gradle (HTTP build cache)
 

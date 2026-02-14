@@ -3,6 +3,7 @@ module github.com/cirruslabs/omni-cache
 go 1.25.2
 
 require (
+	cloud.google.com/go/longrunning v0.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
@@ -24,7 +25,9 @@ require (
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/zeebo/blake3 v0.2.4
 	golang.org/x/net v0.49.0
+	google.golang.org/genproto/googleapis/api v0.0.0-20251111163417-95abcf5c77ba
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260120221211-b8f7ae30c516
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -98,6 +101,5 @@ require (
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

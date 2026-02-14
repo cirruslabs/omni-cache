@@ -1,5 +1,7 @@
 version: v1
 name: buf.build/cirruslabs/omni-cache
+deps:
+  - buf.build/googleapis/googleapis
 breaking:
   use:
     - FILE
