@@ -24,6 +24,7 @@ Always ALWAYS make sure tests are passing and there are no lint errors before cl
 - Keep package names short and lower_snake; exported identifiers use PascalCase, locals camelCase.
 - Accept `context.Context` as the first argument for request-scoped functions and propagate it to logging (`slog`) and clients.
 - Prefer small, composable helpers; reuse `urlproxy` for network forwarding and `storage.URLInfo` for URLs/headers.
+- When adding new protocols, always ALWAYS make sure it acursally tracks stats via stats.Default().* meotods and/or uses `pkg/url-proxy` which does so automatically under the hood.
 
 ## Testing Guidelines
 - Primary framework is the Go testing package with `testify/require` for assertions.
