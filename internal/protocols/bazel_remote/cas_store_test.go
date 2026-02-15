@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 	"github.com/stretchr/testify/require"
@@ -97,6 +98,71 @@ func TestCASStoreDownloadToWriterRetriesDoNotAppendPartialData(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected, result.Bytes())
 	require.Equal(t, 2, transport.calls)
+}
+
+func TestCASStoreExistsRecordsHitMiss(t *testing.T) {
+	stats.Default().Reset()
+	t.Cleanup(func() {
+		stats.Default().Reset()
+	})
+
+	cas, _ := newTestStores(t)
+
+	missingDigest := digestForData([]byte("missing"))
+	exists, err := cas.Exists(t.Context(), "instance", missingDigest)
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	snapshot := stats.Default().Snapshot()
+	require.EqualValues(t, 0, snapshot.CacheHits)
+	require.EqualValues(t, 1, snapshot.CacheMisses)
+
+	stats.Default().Reset()
+
+	data := []byte("present")
+	digest := digestForData(data)
+	require.NoError(t, cas.UploadBytes(t.Context(), "instance", digest, data))
+
+	exists, err = cas.Exists(t.Context(), "instance", digest)
+	require.NoError(t, err)
+	require.True(t, exists)
+
+	snapshot = stats.Default().Snapshot()
+	require.EqualValues(t, 1, snapshot.CacheHits)
+	require.EqualValues(t, 0, snapshot.CacheMisses)
+}
+
+func TestCASStoreDownloadToWriterRecordsHitMiss(t *testing.T) {
+	stats.Default().Reset()
+	t.Cleanup(func() {
+		stats.Default().Reset()
+	})
+
+	cas, _ := newTestStores(t)
+
+	data := []byte("downloadable")
+	digest := digestForData(data)
+	require.NoError(t, cas.UploadBytes(t.Context(), "instance", digest, data))
+
+	stats.Default().Reset()
+
+	var buffer bytes.Buffer
+	err := cas.DownloadToWriter(t.Context(), "instance", digest, &buffer)
+	require.NoError(t, err)
+	require.Equal(t, data, buffer.Bytes())
+
+	snapshot := stats.Default().Snapshot()
+	require.EqualValues(t, 1, snapshot.CacheHits)
+	require.EqualValues(t, 0, snapshot.CacheMisses)
+
+	stats.Default().Reset()
+
+	err = cas.DownloadToWriter(t.Context(), "instance", digestForData([]byte("missing")), &buffer)
+	require.ErrorIs(t, err, storage.ErrCacheNotFound)
+
+	snapshot = stats.Default().Snapshot()
+	require.EqualValues(t, 0, snapshot.CacheHits)
+	require.EqualValues(t, 1, snapshot.CacheMisses)
 }
 
 var _ storage.BlobStorageBackend = (*staticDownloadBackend)(nil)
