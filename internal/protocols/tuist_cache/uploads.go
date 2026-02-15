@@ -29,6 +29,8 @@ type uploadSession struct {
 	key             string
 	backendUploadID string
 	parts           map[int]storage.MultipartUploadPart
+	partSizes       map[int]int64
+	startedAt       time.Time
 	lastTouchedAt   time.Time
 }
 
@@ -36,6 +38,8 @@ type completedUpload struct {
 	key             string
 	backendUploadID string
 	parts           []storage.MultipartUploadPart
+	totalBytes      int64
+	startedAt       time.Time
 }
 
 func newUploadStore(now func() time.Time, ttl time.Duration) *uploadStore {
@@ -64,6 +68,8 @@ func (s *uploadStore) create(key string, backendUploadID string) string {
 		key:             key,
 		backendUploadID: backendUploadID,
 		parts:           map[int]storage.MultipartUploadPart{},
+		partSizes:       map[int]int64{},
+		startedAt:       s.now(),
 		lastTouchedAt:   s.now(),
 	}
 
@@ -89,7 +95,7 @@ func (s *uploadStore) preparePart(uploadID string, partSize int64) (key string, 
 	return session.key, session.backendUploadID, nil
 }
 
-func (s *uploadStore) setPart(uploadID string, partNumber int, etag string) error {
+func (s *uploadStore) setPart(uploadID string, partNumber int, etag string, sizeBytes int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -104,6 +110,10 @@ func (s *uploadStore) setPart(uploadID string, partNumber int, etag string) erro
 		PartNumber: uint32(partNumber),
 		ETag:       etag,
 	}
+	if sizeBytes < 0 {
+		sizeBytes = 0
+	}
+	session.partSizes[partNumber] = sizeBytes
 	session.lastTouchedAt = s.now()
 	return nil
 }
@@ -129,12 +139,14 @@ func (s *uploadStore) complete(uploadID string, requestedParts []int) (*complete
 	}
 
 	parts := make([]storage.MultipartUploadPart, 0, len(requestedParts))
+	var totalBytes int64
 	for _, partNumber := range requestedParts {
 		part, ok := session.parts[partNumber]
 		if !ok {
 			return nil, errPartsMismatch
 		}
 		parts = append(parts, part)
+		totalBytes += session.partSizes[partNumber]
 	}
 
 	// S3 requires parts in ascending order.
@@ -148,6 +160,8 @@ func (s *uploadStore) complete(uploadID string, requestedParts []int) (*complete
 		key:             session.key,
 		backendUploadID: session.backendUploadID,
 		parts:           parts,
+		totalBytes:      totalBytes,
+		startedAt:       session.startedAt,
 	}, nil
 }
 

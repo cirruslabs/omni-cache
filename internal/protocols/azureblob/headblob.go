@@ -2,7 +2,10 @@ package azureblob
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 )
 
 func (azureBlob *AzureBlob) headBlobAbstract(writer http.ResponseWriter, request *http.Request) {
@@ -14,6 +17,7 @@ func (azureBlob *AzureBlob) headBlobAbstract(writer http.ResponseWriter, request
 
 func (azureBlob *AzureBlob) headBlob(writer http.ResponseWriter, request *http.Request) {
 	key := request.PathValue("key")
+	recordHitMiss := !stats.ShouldSkipHitMiss(request)
 
 	// Generate cache entry download URL
 	urls, err := azureBlob.storageBackend.DownloadURLs(request.Context(), key)
@@ -35,7 +39,7 @@ func (azureBlob *AzureBlob) headBlob(writer http.ResponseWriter, request *http.R
 	for i, url := range urls {
 		isLastIteration := i == len(urls)-1
 
-		if azureBlob.retrieveCacheEntryInfo(writer, request, key, url.URL, isLastIteration) {
+		if azureBlob.retrieveCacheEntryInfo(writer, request, key, url.URL, isLastIteration, recordHitMiss) {
 			break
 		}
 	}
@@ -47,6 +51,7 @@ func (azureBlob *AzureBlob) retrieveCacheEntryInfo(
 	key string,
 	url string,
 	isLastIteration bool,
+	recordHitMiss bool,
 ) bool {
 	req, err := http.NewRequestWithContext(request.Context(), http.MethodGet, url, nil)
 	if err != nil {
@@ -70,6 +75,21 @@ func (azureBlob *AzureBlob) retrieveCacheEntryInfo(
 			" cache entry information", "key", key, "err", err)
 
 		return true
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+
+	if resp.StatusCode == http.StatusNotFound && !isLastIteration {
+		return false
+	}
+
+	if recordHitMiss {
+		switch resp.StatusCode {
+		case http.StatusOK, http.StatusPartialContent, http.StatusNoContent:
+			stats.Default().RecordCacheHit()
+		case http.StatusNotFound:
+			stats.Default().RecordCacheMiss()
+		}
 	}
 
 	if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {

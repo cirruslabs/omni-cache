@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tuistopenapi "github.com/cirruslabs/omni-cache/internal/protocols/tuist_cache/openapi"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 )
 
@@ -77,6 +78,7 @@ func (t *tuistCache) ModuleCacheArtifactExists(
 
 	if _, err := t.backend.CacheInfo(ctx, key, nil); err != nil {
 		if storage.IsNotFoundError(err) {
+			stats.Default().RecordCacheMiss()
 			return &tuistopenapi.ModuleCacheArtifactExistsNotFound{Message: "artifact not found"}, nil
 		}
 
@@ -84,6 +86,7 @@ func (t *tuistCache) ModuleCacheArtifactExists(
 		return nil, err
 	}
 
+	stats.Default().RecordCacheHit()
 	return &tuistopenapi.ModuleCacheArtifactExistsNoContent{}, nil
 }
 
@@ -105,6 +108,7 @@ func (t *tuistCache) DownloadModuleCacheArtifact(
 	infos, err := t.backend.DownloadURLs(ctx, key)
 	if err != nil {
 		if storage.IsNotFoundError(err) {
+			stats.Default().RecordCacheMiss()
 			return &tuistopenapi.DownloadModuleCacheArtifactNotFound{Message: "artifact not found"}, nil
 		}
 
@@ -118,10 +122,12 @@ func (t *tuistCache) DownloadModuleCacheArtifact(
 		return nil, err
 	}
 	if reader == nil {
+		stats.Default().RecordCacheMiss()
 		return &tuistopenapi.DownloadModuleCacheArtifactNotFound{Message: "artifact not found"}, nil
 	}
 
-	return &tuistopenapi.DownloadModuleCacheArtifactOK{Data: reader}, nil
+	stats.Default().RecordCacheHit()
+	return &tuistopenapi.DownloadModuleCacheArtifactOK{Data: newStatsReadCloser(reader)}, nil
 }
 
 func (t *tuistCache) StartModuleCacheMultipartUpload(
@@ -140,6 +146,7 @@ func (t *tuistCache) StartModuleCacheMultipartUpload(
 	}
 
 	if _, err := t.backend.CacheInfo(ctx, key, nil); err == nil {
+		stats.Default().RecordCacheHit()
 		uploadID := tuistopenapi.NilString{}
 		uploadID.SetToNull()
 		return &tuistopenapi.StartMultipartUploadResponse{UploadID: uploadID}, nil
@@ -147,6 +154,7 @@ func (t *tuistCache) StartModuleCacheMultipartUpload(
 		slog.ErrorContext(ctx, "tuist multipart preflight failed", "key", key, "err", err)
 		return nil, err
 	}
+	stats.Default().RecordCacheMiss()
 
 	backendUploadID, err := t.backend.CreateMultipartUpload(ctx, key, nil)
 	if err != nil {
@@ -201,7 +209,7 @@ func (t *tuistCache) UploadModuleCachePart(
 		return nil, err
 	}
 
-	if err := t.uploads.setPart(params.UploadID, params.PartNumber, etag); err != nil {
+	if err := t.uploads.setPart(params.UploadID, params.PartNumber, etag, int64(len(partData))); err != nil {
 		switch {
 		case errors.Is(err, errUploadNotFound):
 			return &tuistopenapi.UploadModuleCachePartNotFound{Message: "upload not found"}, nil
@@ -247,6 +255,7 @@ func (t *tuistCache) CompleteModuleCacheMultipartUpload(
 		slog.ErrorContext(ctx, "tuist complete multipart commit failed", "uploadID", params.UploadID, "key", completion.key, "err", err)
 		return &tuistopenapi.CompleteModuleCacheMultipartUploadInternalServerError{Message: "failed to complete multipart upload"}, nil
 	}
+	stats.Default().RecordUpload(completion.totalBytes, time.Since(completion.startedAt))
 	t.uploads.finalize(params.UploadID)
 
 	return &tuistopenapi.CompleteModuleCacheMultipartUploadNoContent{}, nil
@@ -388,4 +397,44 @@ func equalPartNumbers(lhs []int, rhs []int) bool {
 	slices.Sort(leftSorted)
 	slices.Sort(rightSorted)
 	return slices.Equal(leftSorted, rightSorted)
+}
+
+type statsReadCloser struct {
+	reader    io.ReadCloser
+	startedAt time.Time
+	bytesRead int64
+	recorded  bool
+}
+
+func newStatsReadCloser(reader io.ReadCloser) io.ReadCloser {
+	if reader == nil {
+		return nil
+	}
+	return &statsReadCloser{
+		reader:    reader,
+		startedAt: time.Now(),
+	}
+}
+
+func (r *statsReadCloser) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.bytesRead += int64(n)
+	if errors.Is(err, io.EOF) {
+		r.record()
+	}
+	return n, err
+}
+
+func (r *statsReadCloser) Close() error {
+	err := r.reader.Close()
+	r.record()
+	return err
+}
+
+func (r *statsReadCloser) record() {
+	if r.recorded {
+		return
+	}
+	r.recorded = true
+	stats.Default().RecordDownload(r.bytesRead, time.Since(r.startedAt))
 }

@@ -17,6 +17,7 @@ import (
 	tuistcache "github.com/cirruslabs/omni-cache/internal/protocols/tuist_cache"
 	"github.com/cirruslabs/omni-cache/internal/testutil"
 	"github.com/cirruslabs/omni-cache/pkg/server"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
@@ -62,6 +63,53 @@ func TestModuleCacheMiss(t *testing.T) {
 	var payload errorResponse
 	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&payload))
 	require.NotEmpty(t, payload.Message)
+}
+
+func TestModuleCacheRecordsStats(t *testing.T) {
+	stats.Default().Reset()
+	t.Cleanup(func() {
+		stats.Default().Reset()
+	})
+
+	baseURL := startTuistCacheServer(t)
+	client := &http.Client{}
+
+	missQuery := moduleQuery("acme", "ios-app", "aaaa1234", "missing.zip", "builds")
+	missResp, err := client.Get(baseURL + moduleBasePath + "/aaaa1234?" + missQuery.Encode())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, missResp.StatusCode)
+	require.NoError(t, missResp.Body.Close())
+
+	snapshot := stats.Default().Snapshot()
+	require.EqualValues(t, 0, snapshot.CacheHits)
+	require.EqualValues(t, 1, snapshot.CacheMisses)
+
+	stats.Default().Reset()
+
+	uploadQuery := moduleQuery("acme", "ios-app", "bbbb1234", "artifact.zip", "builds")
+	uploadID := startMultipartUpload(t, client, baseURL, uploadQuery)
+	require.NotNil(t, uploadID)
+
+	payload := []byte("hello, tuist cache")
+	uploadPart(t, client, baseURL, "acme", "ios-app", *uploadID, 1, payload)
+	completeMultipartUpload(t, client, baseURL, "acme", "ios-app", *uploadID, []int{1}, http.StatusNoContent)
+
+	hitResp, err := client.Get(baseURL + moduleBasePath + "/bbbb1234?" + uploadQuery.Encode())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, hitResp.StatusCode)
+
+	body, err := io.ReadAll(hitResp.Body)
+	require.NoError(t, err)
+	require.NoError(t, hitResp.Body.Close())
+	require.Equal(t, payload, body)
+
+	snapshot = stats.Default().Snapshot()
+	require.EqualValues(t, 1, snapshot.CacheHits)
+	require.EqualValues(t, 1, snapshot.CacheMisses) // start upload preflight miss
+	require.EqualValues(t, 1, snapshot.Downloads.Count)
+	require.EqualValues(t, len(payload), snapshot.Downloads.Bytes)
+	require.EqualValues(t, 1, snapshot.Uploads.Count)
+	require.EqualValues(t, len(payload), snapshot.Uploads.Bytes)
 }
 
 func TestModuleCacheMultipartRoundTrip(t *testing.T) {

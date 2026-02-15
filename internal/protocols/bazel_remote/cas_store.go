@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	remoteexecution "github.com/cirruslabs/omni-cache/internal/api/build/bazel/remote/execution/v2"
+	"github.com/cirruslabs/omni-cache/pkg/stats"
 	"github.com/cirruslabs/omni-cache/pkg/storage"
 	urlproxy "github.com/cirruslabs/omni-cache/pkg/url-proxy"
 )
@@ -38,11 +39,13 @@ func (s *casStore) Exists(ctx context.Context, instanceName string, digest *remo
 
 	if _, err := s.backend.CacheInfo(ctx, casObjectKey(instanceName, digest), nil); err != nil {
 		if storage.IsNotFoundError(err) {
+			stats.Default().RecordCacheMiss()
 			return false, nil
 		}
 		return false, err
 	}
 
+	stats.Default().RecordCacheHit()
 	return true, nil
 }
 
@@ -112,11 +115,13 @@ func (s *casStore) DownloadToWriter(ctx context.Context, instanceName string, di
 	infos, err := s.backend.DownloadURLs(ctx, key)
 	if err != nil {
 		if storage.IsNotFoundError(err) {
+			stats.Default().RecordCacheMiss()
 			return storage.ErrCacheNotFound
 		}
 		return err
 	}
 	if len(infos) == 0 {
+		stats.Default().RecordCacheMiss()
 		return storage.ErrCacheNotFound
 	}
 
@@ -127,6 +132,7 @@ func (s *casStore) DownloadToWriter(ctx context.Context, instanceName string, di
 			if _, err := io.Copy(w, &retryBuffer); err != nil {
 				return err
 			}
+			stats.Default().RecordCacheHit()
 			return nil
 		} else {
 			lastErr = err
@@ -134,12 +140,15 @@ func (s *casStore) DownloadToWriter(ctx context.Context, instanceName string, di
 	}
 
 	if lastErr == nil {
+		stats.Default().RecordCacheMiss()
 		return storage.ErrCacheNotFound
 	}
 	if errors.Is(lastErr, storage.ErrCacheNotFound) {
+		stats.Default().RecordCacheMiss()
 		return storage.ErrCacheNotFound
 	}
 	if strings.Contains(strings.ToLower(lastErr.Error()), "404") {
+		stats.Default().RecordCacheMiss()
 		return storage.ErrCacheNotFound
 	}
 

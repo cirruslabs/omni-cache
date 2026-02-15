@@ -72,7 +72,7 @@ func (cache *Cache) GetCacheEntryDownloadURL(ctx context.Context, request *ghare
 	stats.Default().RecordCacheHit()
 	return &gharesults.GetCacheEntryDownloadURLResponse{
 		Ok:                true,
-		SignedDownloadUrl: cache.azureBlobURL(info.Key),
+		SignedDownloadUrl: cache.azureBlobURL(info.Key, true),
 		MatchedKey:        strings.TrimPrefix(info.Key, httpCacheKey("", request.Version)),
 	}, nil
 }
@@ -80,7 +80,7 @@ func (cache *Cache) GetCacheEntryDownloadURL(ctx context.Context, request *ghare
 func (cache *Cache) CreateCacheEntry(ctx context.Context, request *gharesults.CreateCacheEntryRequest) (*gharesults.CreateCacheEntryResponse, error) {
 	return &gharesults.CreateCacheEntryResponse{
 		Ok:              true,
-		SignedUploadUrl: cache.azureBlobURL(httpCacheKey(request.Key, request.Version)),
+		SignedUploadUrl: cache.azureBlobURL(httpCacheKey(request.Key, request.Version), false),
 	}, nil
 }
 
@@ -101,6 +101,16 @@ func httpCacheKey(key string, version string) string {
 	return fmt.Sprintf("%s-%s", version, key)
 }
 
-func (cache *Cache) azureBlobURL(keyWithVersion string) string {
-	return fmt.Sprintf("http://%s%s/%s", cache.cacheHost, azureblob.APIMountPoint, url.PathEscape(keyWithVersion))
+func (cache *Cache) azureBlobURL(keyWithVersion string, skipHitMiss bool) string {
+	rawURL := fmt.Sprintf("http://%s%s/%s", cache.cacheHost, azureblob.APIMountPoint, url.PathEscape(keyWithVersion))
+	if !skipHitMiss {
+		return rawURL
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	stats.AddSkipHitMissQuery(parsed)
+	return parsed.String()
 }

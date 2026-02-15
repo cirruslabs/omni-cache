@@ -12,7 +12,7 @@ func TestUploadStoreRetainsSessionUntilFinalize(t *testing.T) {
 	store := newUploadStore(func() time.Time { return now }, 5*time.Minute)
 
 	uploadID := store.create("key", "backend-upload")
-	require.NoError(t, store.setPart(uploadID, 1, "etag-1"))
+	require.NoError(t, store.setPart(uploadID, 1, "etag-1", 10))
 
 	completion, err := store.complete(uploadID, []int{1})
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestUploadStoreRefreshesTTLOnActivity(t *testing.T) {
 	require.NoError(t, err)
 
 	now = now.Add(4 * time.Minute)
-	require.NoError(t, store.setPart(uploadID, 1, "etag-1"))
+	require.NoError(t, store.setPart(uploadID, 1, "etag-1", 10))
 
 	now = now.Add(4 * time.Minute)
 	_, _, err = store.preparePart(uploadID, 1)

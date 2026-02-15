@@ -28,6 +28,7 @@ func (azureBlob *AzureBlob) getBlobAbstract(writer http.ResponseWriter, request 
 
 func (azureBlob *AzureBlob) getBlob(writer http.ResponseWriter, request *http.Request) {
 	key := request.PathValue("key")
+	recordHitMiss := !stats.ShouldSkipHitMiss(request)
 
 	// Generate cache entry download URL
 	urls, err := azureBlob.storageBackend.DownloadURLs(request.Context(), key)
@@ -49,7 +50,7 @@ func (azureBlob *AzureBlob) getBlob(writer http.ResponseWriter, request *http.Re
 	for i, url := range urls {
 		isLastIteration := i == len(urls)-1
 
-		if azureBlob.proxyCacheEntryDownload(writer, request, key, url.URL, isLastIteration) {
+		if azureBlob.proxyCacheEntryDownload(writer, request, key, url.URL, isLastIteration, recordHitMiss) {
 			break
 		}
 	}
@@ -61,6 +62,7 @@ func (azureBlob *AzureBlob) proxyCacheEntryDownload(
 	key string,
 	url string,
 	isLastIteration bool,
+	recordHitMiss bool,
 ) bool {
 	req, err := http.NewRequestWithContext(request.Context(), http.MethodGet, url, nil)
 	if err != nil {
@@ -103,10 +105,16 @@ func (azureBlob *AzureBlob) proxyCacheEntryDownload(
 
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusPartialContent:
+		if recordHitMiss {
+			stats.Default().RecordCacheHit()
+		}
 		// Proceed with proxying
 	case http.StatusNotFound:
 		if !isLastIteration {
 			return false
+		}
+		if recordHitMiss {
+			stats.Default().RecordCacheMiss()
 		}
 
 		writer.WriteHeader(http.StatusNotFound)
