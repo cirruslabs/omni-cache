@@ -54,7 +54,9 @@ protocols with ready-to-copy examples in `PROTOCOLS.md`:
 
 ## Installation
 
-Special [Setup Action](https://github.com/cirruslabs/setup-omni-cache) for Github Actions:
+Note that jobs running on [Cirrus Runners](https://cirrus-runners.app/) has an Omni Cache daemon running automatically so no additional setup is needed.
+
+Use special [Setup Action](https://github.com/cirruslabs/setup-omni-cache) for Github Actions when running on self-hosted runners:
 
 ```yaml
 steps:
