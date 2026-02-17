@@ -131,6 +131,16 @@ func TestHTTPCacheHeadBackendErrorTreatedAsMiss(t *testing.T) {
 		testServer.Shutdown(context.Background())
 	})
 
+	baseURL := "http://" + listener.Addr().String()
+
+	// Reset stats to isolate behavior in this test.
+	resetReq, err := http.NewRequest(http.MethodDelete, baseURL+"/metrics/cache", nil)
+	require.NoError(t, err)
+	resetResp, err := http.DefaultClient.Do(resetReq)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resetResp.StatusCode)
+	require.NoError(t, resetResp.Body.Close())
+
 	req, err := http.NewRequest(http.MethodHead, "http://"+listener.Addr().String()+"/cache/missing", nil)
 	require.NoError(t, err)
 
@@ -138,6 +148,20 @@ func TestHTTPCacheHeadBackendErrorTreatedAsMiss(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
+
+	metricsReq, err := http.NewRequest(http.MethodGet, baseURL+"/metrics/cache", nil)
+	require.NoError(t, err)
+	metricsReq.Header.Set("Accept", "application/json")
+	metricsResp, err := http.DefaultClient.Do(metricsReq)
+	require.NoError(t, err)
+	defer metricsResp.Body.Close()
+	require.Equal(t, http.StatusOK, metricsResp.StatusCode)
+
+	var summary struct {
+		CacheMisses int64 `json:"cache_misses"`
+	}
+	require.NoError(t, json.NewDecoder(metricsResp.Body).Decode(&summary))
+	require.EqualValues(t, 1, summary.CacheMisses)
 }
 
 func TestHTTPCacheHeadRecordsHitMiss(t *testing.T) {
