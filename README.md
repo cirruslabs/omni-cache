@@ -48,6 +48,7 @@ protocols with ready-to-copy examples in `PROTOCOLS.md`:
 | Docker Layer Caching | GitHub Actions cache v2 (`gha`) | `PROTOCOLS.md#docker-layer-caching-github-actions-cache` |
 | Bazel                | HTTP cache                      | `PROTOCOLS.md#bazel-http-cache`                          |
 | Gradle               | HTTP build cache                | `PROTOCOLS.md#gradle-http-build-cache`                   |
+| CCache               | HTTP storage backend            | `PROTOCOLS.md#ccache-http-storage-backend`               |
 | Xcode / LLVM         | HTTP cache                      | `PROTOCOLS.md#xcode--llvm-compilation-cache`             |
 | Custom HTTP clients  | HTTP cache                      | `PROTOCOLS.md#custom-http-clients`                       |
 

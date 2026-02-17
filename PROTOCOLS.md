@@ -8,6 +8,7 @@ build system or tool and points to the protocol you should use.
 - [Docker Layer Caching (GitHub Actions cache)](#docker-layer-caching-github-actions-cache)
 - [Bazel (HTTP cache)](#bazel-http-cache)
 - [Gradle (HTTP build cache)](#gradle-http-build-cache)
+- [CCache (HTTP storage backend)](#ccache-http-storage-backend)
 - [Xcode / LLVM compilation cache](#xcode--llvm-compilation-cache)
 - [Custom HTTP clients](#custom-http-clients)
 
@@ -92,6 +93,24 @@ buildCache {
     push = isMasterBranch
   }
 }
+```
+
+## CCache (HTTP storage backend)
+
+Use the HTTP cache protocol (`http-cache`) and set `CCACHE_REMOTE_STORAGE` to a path prefix
+served by Omni Cache:
+
+```sh
+export OMNI_CACHE_ADDRESS=localhost:12321
+export CCACHE_REMOTE_STORAGE=http://$OMNI_CACHE_ADDRESS/cache/
+```
+
+Omni Cache supports the HTTP methods ccache uses for this backend (`GET`, `HEAD`, `PUT`, `DELETE`).
+
+Optional ccache layout example:
+
+```sh
+export CCACHE_REMOTE_STORAGE='http://localhost:12321/cache/|layout=bazel'
 ```
 
 ## Xcode / LLVM compilation cache

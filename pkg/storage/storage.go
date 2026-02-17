@@ -59,6 +59,11 @@ type BlobStorageBackend interface {
 	CacheInfo(ctx context.Context, key string, prefixes []string) (*CacheInfo, error)
 }
 
+// DeletableBlobStorageBackend extends BlobStorageBackend with cache entry deletion.
+type DeletableBlobStorageBackend interface {
+	Delete(ctx context.Context, key string) error
+}
+
 type MultipartBlobStorageBackend interface {
 	BlobStorageBackend
 
