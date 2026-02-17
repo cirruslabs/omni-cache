@@ -107,10 +107,14 @@ func (p *protocol) uploadCacheEntry(w http.ResponseWriter, r *http.Request) {
 
 func (p *protocol) headCacheEntry(w http.ResponseWriter, r *http.Request) {
 	cacheKey := r.PathValue("key")
+	shouldSkipHitMiss := stats.ShouldSkipHitMiss(r)
 
 	_, err := p.storageBackend.CacheInfo(r.Context(), cacheKey, nil)
 	if err != nil {
 		if storage.IsNotFoundError(err) {
+			if !shouldSkipHitMiss {
+				stats.Default().RecordCacheMiss()
+			}
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -122,6 +126,9 @@ func (p *protocol) headCacheEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !shouldSkipHitMiss {
+		stats.Default().RecordCacheHit()
+	}
 	w.WriteHeader(http.StatusOK)
 }
 

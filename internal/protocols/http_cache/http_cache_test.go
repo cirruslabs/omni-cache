@@ -140,6 +140,51 @@ func TestHTTPCacheHeadBackendErrorTreatedAsMiss(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 }
 
+func TestHTTPCacheHeadRecordsHitMiss(t *testing.T) {
+	baseURL := startServer(t)
+	existingURL := baseURL + "/cache/" + uuid.NewString() + "/test.txt"
+	missingURL := baseURL + "/cache/" + uuid.NewString() + "/missing.txt"
+
+	uploadResp, err := http.Post(existingURL, "text/plain", strings.NewReader("Hello, World!"))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, uploadResp.StatusCode)
+	require.NoError(t, uploadResp.Body.Close())
+
+	// Reset stats to isolate HEAD behavior in this test.
+	resetReq, err := http.NewRequest(http.MethodDelete, baseURL+"/metrics/cache", nil)
+	require.NoError(t, err)
+	resetResp, err := http.DefaultClient.Do(resetReq)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resetResp.StatusCode)
+	require.NoError(t, resetResp.Body.Close())
+
+	missingResp, err := http.Head(missingURL)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, missingResp.StatusCode)
+	require.NoError(t, missingResp.Body.Close())
+
+	existingResp, err := http.Head(existingURL)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, existingResp.StatusCode)
+	require.NoError(t, existingResp.Body.Close())
+
+	metricsReq, err := http.NewRequest(http.MethodGet, baseURL+"/metrics/cache", nil)
+	require.NoError(t, err)
+	metricsReq.Header.Set("Accept", "application/json")
+	metricsResp, err := http.DefaultClient.Do(metricsReq)
+	require.NoError(t, err)
+	defer metricsResp.Body.Close()
+	require.Equal(t, http.StatusOK, metricsResp.StatusCode)
+
+	var summary struct {
+		CacheHits   int64 `json:"cache_hits"`
+		CacheMisses int64 `json:"cache_misses"`
+	}
+	require.NoError(t, json.NewDecoder(metricsResp.Body).Decode(&summary))
+	require.EqualValues(t, 1, summary.CacheHits)
+	require.EqualValues(t, 1, summary.CacheMisses)
+}
+
 func startServer(t *testing.T) string {
 	t.Helper()
 
