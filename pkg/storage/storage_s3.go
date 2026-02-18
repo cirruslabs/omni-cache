@@ -231,6 +231,15 @@ func (s *s3Storage) UploadURL(ctx context.Context, key string, metadata map[stri
 	return info, nil
 }
 
+func (s *s3Storage) Delete(ctx context.Context, key string) error {
+	objectKey := s.objectKey(key)
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(objectKey),
+	})
+	return err
+}
+
 func (s *s3Storage) presignGet(ctx context.Context, objectKey string) (*URLInfo, error) {
 	presigned, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucketName),

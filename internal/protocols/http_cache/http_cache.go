@@ -15,7 +15,9 @@ import (
 // Endpoints:
 //
 //	GET /{key...} downloads a cache entry.
+//	HEAD /{key...} checks whether a cache entry exists.
 //	PUT or POST /{key...} uploads a cache entry.
+//	DELETE /{key...} removes a cache entry.
 type Factory struct{}
 
 func (Factory) ID() string {
@@ -44,10 +46,16 @@ func (p *protocol) Register(registrar *protocols.Registrar) error {
 	mux.HandleFunc("GET /{key...}", p.downloadCache)
 	mux.HandleFunc("POST /{key...}", p.uploadCacheEntry)
 	mux.HandleFunc("PUT /{key...}", p.uploadCacheEntry)
+	mux.HandleFunc("DELETE /{key...}", p.deleteCacheEntry)
 	return nil
 }
 
 func (p *protocol) downloadCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodHead {
+		p.headCacheEntry(w, r)
+		return
+	}
+
 	cacheKey := r.PathValue("key")
 
 	infos, err := p.storageBackend.DownloadURLs(r.Context(), cacheKey)
@@ -95,4 +103,49 @@ func (p *protocol) uploadCacheEntry(w http.ResponseWriter, r *http.Request) {
 		ContentLength: r.ContentLength,
 		ResourceName:  cacheKey,
 	})
+}
+
+func (p *protocol) headCacheEntry(w http.ResponseWriter, r *http.Request) {
+	cacheKey := r.PathValue("key")
+	shouldSkipHitMiss := stats.ShouldSkipHitMiss(r)
+
+	_, err := p.storageBackend.CacheInfo(r.Context(), cacheKey, nil)
+	if err != nil {
+		if storage.IsNotFoundError(err) {
+			if !shouldSkipHitMiss {
+				stats.Default().RecordCacheMiss()
+			}
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// Keep HEAD behavior consistent with GET and degrade backend lookup
+		// failures to cache misses.
+		slog.ErrorContext(r.Context(), "cache HEAD failed", "cacheKey", cacheKey, "err", err)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if !shouldSkipHitMiss {
+		stats.Default().RecordCacheHit()
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (p *protocol) deleteCacheEntry(w http.ResponseWriter, r *http.Request) {
+	cacheKey := r.PathValue("key")
+
+	deletableStorage, ok := p.storageBackend.(storage.DeletableBlobStorageBackend)
+	if !ok {
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
+
+	if err := deletableStorage.Delete(r.Context(), cacheKey); err != nil {
+		slog.ErrorContext(r.Context(), "cache delete failed", "cacheKey", cacheKey, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

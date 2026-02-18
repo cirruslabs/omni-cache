@@ -210,6 +210,33 @@ func TestCacheInfoPrefixMatch(t *testing.T) {
 	require.Equal(t, metadata, info.Metadata)
 }
 
+func TestDelete(t *testing.T) {
+	ctx := context.Background()
+	stor := testutil.NewMultipartStorage(t)
+
+	deletableStorage, ok := stor.(storage.DeletableBlobStorageBackend)
+	require.True(t, ok)
+
+	key := "delete/" + uuid.NewString()
+	payload := []byte("to-delete")
+
+	uploadURL, err := stor.UploadURL(ctx, key, nil)
+	require.NoError(t, err)
+	uploadObject(t, uploadURL, payload)
+
+	_, err = stor.DownloadURLs(ctx, key)
+	require.NoError(t, err)
+
+	require.NoError(t, deletableStorage.Delete(ctx, key))
+
+	_, err = stor.DownloadURLs(ctx, key)
+	require.Error(t, err)
+	require.True(t, storage.IsNotFoundError(err))
+
+	// Deletion should be idempotent.
+	require.NoError(t, deletableStorage.Delete(ctx, key))
+}
+
 func uploadPart(t *testing.T, urlInfo *storage.URLInfo, data []byte) string {
 	t.Helper()
 
