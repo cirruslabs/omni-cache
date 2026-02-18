@@ -122,9 +122,6 @@ func (p *protocol) headCacheEntry(w http.ResponseWriter, r *http.Request) {
 		// Keep HEAD behavior consistent with GET and degrade backend lookup
 		// failures to cache misses.
 		slog.ErrorContext(r.Context(), "cache HEAD failed", "cacheKey", cacheKey, "err", err)
-		if !shouldSkipHitMiss {
-			stats.Default().RecordCacheMiss()
-		}
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

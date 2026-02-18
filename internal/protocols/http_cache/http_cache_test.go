@@ -116,7 +116,7 @@ func TestHTTPCacheHeadDoesNotRecordDownloads(t *testing.T) {
 	require.EqualValues(t, 0, summary.Downloads.Bytes)
 }
 
-func TestHTTPCacheHeadBackendErrorTreatedAsMiss(t *testing.T) {
+func TestHTTPCacheHeadBackendErrorDegradedToMissWithoutMetrics(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
@@ -158,10 +158,12 @@ func TestHTTPCacheHeadBackendErrorTreatedAsMiss(t *testing.T) {
 	require.Equal(t, http.StatusOK, metricsResp.StatusCode)
 
 	var summary struct {
+		CacheHits   int64 `json:"cache_hits"`
 		CacheMisses int64 `json:"cache_misses"`
 	}
 	require.NoError(t, json.NewDecoder(metricsResp.Body).Decode(&summary))
-	require.EqualValues(t, 1, summary.CacheMisses)
+	require.EqualValues(t, 0, summary.CacheHits)
+	require.EqualValues(t, 0, summary.CacheMisses)
 }
 
 func TestHTTPCacheHeadRecordsHitMiss(t *testing.T) {
