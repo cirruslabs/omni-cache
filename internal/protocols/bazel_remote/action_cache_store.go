@@ -95,6 +95,15 @@ func (s *actionCacheStore) GetActionResult(
 				return nil, false, err
 			}
 
+			referencedBlobsPresent, err := s.actionResultBlobsExist(ctx, instanceName, &result)
+			if err != nil {
+				return nil, false, err
+			}
+			if !referencedBlobsPresent {
+				stats.Default().RecordCacheMiss()
+				return nil, false, nil
+			}
+
 			stats.Default().RecordCacheHit()
 			return &result, true, nil
 		} else {
@@ -120,4 +129,93 @@ func (s *actionCacheStore) GetActionResult(
 
 func actionResultObjectKey(instanceName string, digest *remoteexecution.Digest) string {
 	return fmt.Sprintf("bazel/ac/v2/%s/sha256/%s/%d.pb", encodeInstance(instanceName), digest.GetHash(), digest.GetSizeBytes())
+}
+
+func (s *actionCacheStore) actionResultBlobsExist(
+	ctx context.Context,
+	instanceName string,
+	result *remoteexecution.ActionResult,
+) (bool, error) {
+	if result == nil {
+		return false, nil
+	}
+
+	type digestKey struct {
+		hash      string
+		sizeBytes int64
+	}
+	checkedDigests := make(map[digestKey]struct{})
+	checkDigest := func(digest *remoteexecution.Digest) (bool, error) {
+		if digest == nil {
+			return true, nil
+		}
+
+		normalized, err := normalizeDigest(digest, remoteexecution.DigestFunction_SHA256)
+		if err != nil {
+			return false, nil
+		}
+
+		key := digestKey{
+			hash:      normalized.GetHash(),
+			sizeBytes: normalized.GetSizeBytes(),
+		}
+		if _, ok := checkedDigests[key]; ok {
+			return true, nil
+		}
+		checkedDigests[key] = struct{}{}
+
+		exists, err := s.casBlobExists(ctx, instanceName, normalized)
+		if err != nil {
+			return false, err
+		}
+		return exists, nil
+	}
+
+	blobDigests := make([]*remoteexecution.Digest, 0, len(result.GetOutputFiles())+len(result.GetOutputDirectories())+2)
+	blobDigests = append(blobDigests, result.GetStdoutDigest(), result.GetStderrDigest())
+	for _, outputFile := range result.GetOutputFiles() {
+		blobDigests = append(blobDigests, outputFile.GetDigest())
+	}
+	for _, outputDirectory := range result.GetOutputDirectories() {
+		blobDigests = append(blobDigests, outputDirectory.GetTreeDigest())
+	}
+
+	for _, digest := range blobDigests {
+		exists, err := checkDigest(digest)
+		if err != nil {
+			return false, err
+		}
+		if !exists {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (s *actionCacheStore) casBlobExists(
+	ctx context.Context,
+	instanceName string,
+	digest *remoteexecution.Digest,
+) (bool, error) {
+	if s.backend == nil {
+		return false, fmt.Errorf("storage backend is nil")
+	}
+
+	normalized, err := normalizeDigest(digest, remoteexecution.DigestFunction_SHA256)
+	if err != nil {
+		return false, err
+	}
+	if isEmptyDigest(normalized) {
+		return true, nil
+	}
+
+	if _, err := s.backend.CacheInfo(ctx, casObjectKey(instanceName, normalized), nil); err != nil {
+		if storage.IsNotFoundError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }

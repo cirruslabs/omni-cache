@@ -43,3 +43,29 @@ func TestActionCacheStoreGetActionResultRecordsHitMiss(t *testing.T) {
 	require.EqualValues(t, 1, snapshot.CacheHits)
 	require.EqualValues(t, 0, snapshot.CacheMisses)
 }
+
+func TestActionCacheStoreGetActionResultMissWhenReferencedBlobMissing(t *testing.T) {
+	stats.Default().Reset()
+	t.Cleanup(func() {
+		stats.Default().Reset()
+	})
+
+	cas, _ := newTestStores(t)
+	store := newActionCacheStore(cas.backend, cas.proxy)
+
+	actionDigest := digestForData([]byte("action"))
+	resultWithMissingBlob := &remoteexecution.ActionResult{
+		ExitCode:     0,
+		StdoutDigest: digestForData([]byte("stdout")),
+	}
+	require.NoError(t, store.PutActionResult(t.Context(), "instance", actionDigest, resultWithMissingBlob))
+
+	got, ok, err := store.GetActionResult(t.Context(), "instance", actionDigest)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, got)
+
+	snapshot := stats.Default().Snapshot()
+	require.EqualValues(t, 0, snapshot.CacheHits)
+	require.EqualValues(t, 1, snapshot.CacheMisses)
+}

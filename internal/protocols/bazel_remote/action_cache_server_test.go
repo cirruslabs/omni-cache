@@ -12,16 +12,23 @@ import (
 )
 
 func TestActionCacheUpdateAndGetRoundTrip(t *testing.T) {
-	client := newActionCacheTestClient(t)
+	client, cas := newActionCacheTestClient(t)
 
 	actionDigest := digestForData([]byte("action-digest"))
+	stdoutData := []byte("stdout")
+	outputData := []byte("output")
+	stdoutDigest := digestForData(stdoutData)
+	outputDigest := digestForData(outputData)
+	require.NoError(t, cas.UploadBytes(t.Context(), "instance", stdoutDigest, stdoutData))
+	require.NoError(t, cas.UploadBytes(t.Context(), "instance", outputDigest, outputData))
+
 	expected := &remoteexecution.ActionResult{
 		ExitCode:     17,
-		StdoutDigest: digestForData([]byte("stdout")),
+		StdoutDigest: stdoutDigest,
 		OutputFiles: []*remoteexecution.OutputFile{
 			{
 				Path:         "out.txt",
-				Digest:       digestForData([]byte("output")),
+				Digest:       outputDigest,
 				IsExecutable: true,
 			},
 		},
@@ -46,7 +53,7 @@ func TestActionCacheUpdateAndGetRoundTrip(t *testing.T) {
 }
 
 func TestActionCacheGetActionResultMissing(t *testing.T) {
-	client := newActionCacheTestClient(t)
+	client, _ := newActionCacheTestClient(t)
 
 	_, err := client.GetActionResult(t.Context(), &remoteexecution.GetActionResultRequest{
 		InstanceName:   "instance",
@@ -61,7 +68,7 @@ func TestActionCacheGetActionResultMissing(t *testing.T) {
 }
 
 func TestActionCacheGetActionResultInvalidDigest(t *testing.T) {
-	client := newActionCacheTestClient(t)
+	client, _ := newActionCacheTestClient(t)
 
 	_, err := client.GetActionResult(t.Context(), &remoteexecution.GetActionResultRequest{
 		InstanceName:   "instance",
@@ -76,7 +83,7 @@ func TestActionCacheGetActionResultInvalidDigest(t *testing.T) {
 }
 
 func TestActionCacheGetActionResultInvalidDigestFunction(t *testing.T) {
-	client := newActionCacheTestClient(t)
+	client, _ := newActionCacheTestClient(t)
 
 	_, err := client.GetActionResult(t.Context(), &remoteexecution.GetActionResultRequest{
 		InstanceName:   "instance",
@@ -91,7 +98,7 @@ func TestActionCacheGetActionResultInvalidDigestFunction(t *testing.T) {
 }
 
 func TestActionCacheUpdateActionResultRequiresResult(t *testing.T) {
-	client := newActionCacheTestClient(t)
+	client, _ := newActionCacheTestClient(t)
 
 	_, err := client.UpdateActionResult(t.Context(), &remoteexecution.UpdateActionResultRequest{
 		InstanceName:   "instance",
@@ -105,7 +112,7 @@ func TestActionCacheUpdateActionResultRequiresResult(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-func newActionCacheTestClient(t *testing.T) remoteexecution.ActionCacheClient {
+func newActionCacheTestClient(t *testing.T) (remoteexecution.ActionCacheClient, *casStore) {
 	t.Helper()
 
 	cas, _ := newTestStores(t)
@@ -114,5 +121,5 @@ func newActionCacheTestClient(t *testing.T) remoteexecution.ActionCacheClient {
 		remoteexecution.RegisterActionCacheServer(server, newActionCacheServer(store))
 	})
 
-	return remoteexecution.NewActionCacheClient(conn)
+	return remoteexecution.NewActionCacheClient(conn), cas
 }
