@@ -20,7 +20,7 @@ func (s *capabilitiesServer) GetCapabilities(context.Context, *remoteexecution.G
 		CacheCapabilities: &remoteexecution.CacheCapabilities{
 			DigestFunctions: []remoteexecution.DigestFunction_Value{remoteexecution.DigestFunction_SHA256},
 			ActionCacheUpdateCapabilities: &remoteexecution.ActionCacheUpdateCapabilities{
-				UpdateEnabled: false,
+				UpdateEnabled: true,
 			},
 			MaxBatchTotalSizeBytes:          0,
 			SupportedCompressors:            nil,

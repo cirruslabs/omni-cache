@@ -47,8 +47,10 @@ func (p *protocol) Register(registrar *protocols.Registrar) error {
 	}
 
 	cas := newCASStore(p.backend, p.proxy)
+	actionCache := newActionCacheStore(p.backend, p.proxy)
 	assets := newAssetStore(p.backend, p.proxy)
 
+	remoteexecution.RegisterActionCacheServer(grpcRegistrar, newActionCacheServer(actionCache))
 	remoteexecution.RegisterContentAddressableStorageServer(grpcRegistrar, newCASServer(cas))
 	remoteexecution.RegisterCapabilitiesServer(grpcRegistrar, newCapabilitiesServer())
 	bytestream.RegisterByteStreamServer(grpcServer, newByteStreamServer(cas))
