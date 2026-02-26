@@ -7,7 +7,7 @@ build system or tool and points to the protocol you should use.
 
 - [Docker Layer Caching (GitHub Actions cache)](#docker-layer-caching-github-actions-cache)
 - [Bazel (HTTP cache)](#bazel-http-cache)
-- [Bazel (gRPC CAS + Remote Asset)](#bazel-grpc-cas--remote-asset)
+- [Bazel (gRPC ActionCache + CAS + Remote Asset)](#bazel-grpc-actioncache--cas--remote-asset)
 - [Gradle (HTTP build cache)](#gradle-http-build-cache)
 - [CCache (HTTP storage backend)](#ccache-http-storage-backend)
 - [Xcode / LLVM compilation cache](#xcode--llvm-compilation-cache)
@@ -77,7 +77,7 @@ bazel build \
   //...
 ```
 
-## Bazel (gRPC CAS + Remote Asset)
+## Bazel (gRPC ActionCache + CAS + Remote Asset)
 
 Use the Bazel remote cache/downloader gRPC endpoint (`bazel-remote`) and point Bazel at Omni Cache:
 
