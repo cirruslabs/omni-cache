@@ -158,20 +158,25 @@ func (azureBlob *AzureBlob) proxyCacheEntryDownload(
 	})
 	bytesRead, err := io.CopyBuffer(writer, progressReader, largeBuffer)
 	if err != nil {
+		// Try to recover by adjusting Range header and re-issuing the request
+		// before treating the error as fatal. This must happen before fail(),
+		// otherwise a recoverable mid-stream close is turned into a hard failure.
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			bytesRecovered, recoverErr := azureBlob.proxyRecover(request.Context(), rangeHeaderToUse, resp, url, bytesRead, writer)
+			if recoverErr == nil {
+				craftAndLogMessage(slog.LevelInfo, "successfully recovered proxy cache entry download",
+					"read", bytesRead+bytesRecovered, "key", key)
+				stats.Default().RecordDownload(bytesRead+bytesRecovered, time.Since(startProxyingAt))
+
+				return true
+			}
+
+			craftAndLogMessage(slog.LevelError, "failed to recover proxy cache entry download",
+				"err", recoverErr)
+		}
+
 		fail(nil, request, http.StatusInternalServerError, "failed to proxy cache entry download",
 			"err", err, "duration", time.Since(startProxyingAt), "read", bytesRead, "key", key)
-
-		// Try to recover by adjusting Range header and re-issuing the request
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			bytesRecovered, err := azureBlob.proxyRecover(request.Context(), rangeHeaderToUse, resp, url, bytesRead, writer)
-			if err != nil {
-				craftAndLogMessage(slog.LevelError, "failed to recover proxy cache entry download",
-					"err", err)
-			} else {
-				craftAndLogMessage(slog.LevelInfo, "successfully recovered proxy cache entry download",
-					"read", bytesRecovered, "key", key)
-			}
-		}
 
 		return true
 	}
