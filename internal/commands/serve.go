@@ -211,6 +211,10 @@ func newS3Client(cfg aws.Config, s3Endpoint string) (*s3.Client, error) {
 	client := s3.NewFromConfig(cfg, func(options *s3.Options) {
 		options.BaseEndpoint = aws.String(s3Endpoint)
 		options.UsePathStyle = true
+		// Custom endpoint => a non-AWS S3-compatible store (SeaweedFS, MinIO, ...).
+		// The SDK default signs an x-amz-checksum-mode param onto presigned GETs
+		// that such stores can reject with 403 SignatureDoesNotMatch; drop it.
+		options.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 	return client, nil
 }
