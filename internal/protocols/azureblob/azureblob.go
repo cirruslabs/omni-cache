@@ -68,38 +68,40 @@ func (azureBlob *AzureBlob) ServeHTTP(writer http.ResponseWriter, request *http.
 }
 
 func fail(writer http.ResponseWriter, request *http.Request, status int, msg string, args ...any) {
-	// Report failure to the Sentry
-	hub := sentry.GetHubFromContext(request.Context())
+	// Report to Sentry only if a hub is configured: GetHubFromContext returns
+	// nil when Sentry is uninitialized, and dereferencing it would panic the
+	// handler mid-response, which the client sees as a "socket hang up".
+	if hub := sentry.GetHubFromContext(request.Context()); hub != nil {
+		hub.WithScope(func(scope *sentry.Scope) {
+			scope.AddEventProcessor(func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
+				// Swap the exception type and value to work around
+				// https://github.com/getsentry/sentry/issues/17837
+				savedType := event.Exception[0].Type
+				event.Exception[0].Type = event.Exception[0].Value
+				event.Exception[0].Value = savedType
 
-	hub.WithScope(func(scope *sentry.Scope) {
-		scope.AddEventProcessor(func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
-			// Swap the exception type and value to work around
-			// https://github.com/getsentry/sentry/issues/17837
-			savedType := event.Exception[0].Type
-			event.Exception[0].Type = event.Exception[0].Value
-			event.Exception[0].Value = savedType
+				return event
+			})
 
-			return event
-		})
+			argsAsSentryContext := sentry.Context{}
 
-		argsAsSentryContext := sentry.Context{}
+			for _, chunk := range lo.Chunk(args, 2) {
+				key := fmt.Sprintf("%v", chunk[0])
 
-		for _, chunk := range lo.Chunk(args, 2) {
-			key := fmt.Sprintf("%v", chunk[0])
+				var value string
 
-			var value string
+				if len(chunk) > 1 {
+					value = fmt.Sprintf("%v", chunk[1])
+				}
 
-			if len(chunk) > 1 {
-				value = fmt.Sprintf("%v", chunk[1])
+				argsAsSentryContext[key] = value
 			}
 
-			argsAsSentryContext[key] = value
-		}
+			scope.SetContext("Arguments", argsAsSentryContext)
 
-		scope.SetContext("Arguments", argsAsSentryContext)
-
-		hub.CaptureException(errors.New(msg))
-	})
+			hub.CaptureException(errors.New(msg))
+		})
+	}
 
 	message := craftAndLogMessage(slog.LevelError, msg, args...)
 
