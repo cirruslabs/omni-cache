@@ -78,6 +78,14 @@ func (s *s3Storage) ensureBucketExists(ctx context.Context) error {
 	if _, err := s.client.HeadBucket(ctx, headInput); err == nil {
 		s.bucketReady = true
 		return nil
+	} else {
+		// 403 on HeadBucket means the bucket exists but the caller lacks s3:ListBucket.
+		// Object-level permissions (PutObject/GetObject) are sufficient for caching.
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "Forbidden" {
+			s.bucketReady = true
+			return nil
+		}
 	}
 
 	createInput := &s3.CreateBucketInput{
